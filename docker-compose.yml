@@ -1,0 +1,8 @@
+version: '3.8'
+
+services:
+  grobid:
+    image: grobid/grobid:0.8.0
+    ports:
+      - "8070:8070"
+    restart: unless-stopped
