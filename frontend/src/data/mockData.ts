@@ -259,7 +259,7 @@ export const mockDocument = {
   documentId: 'doc_001',
   userId: 'user_001',
   title: 'Critical Reading Challenges in Undergraduate Education',
-  originalPdfUrl: null,
+  originalPdfUrl: '',
   parsedContent: {
     sections: mockSections,
   },

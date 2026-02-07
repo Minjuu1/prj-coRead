@@ -22,6 +22,9 @@ interface AppState {
   // Thread state
   threads: ThreadListItem[];
   setThreads: (threads: ThreadListItem[]) => void;
+  fullThreads: Thread[];  // Full thread data with messages
+  setFullThreads: (threads: Thread[]) => void;
+  addFullThread: (thread: Thread) => void;
   selectedThread: Thread | null;
   setSelectedThread: (thread: Thread | null) => void;
   selectedThreadId: string | null;
@@ -42,6 +45,7 @@ const initialState = {
   document: null,
   sections: [],
   threads: [],
+  fullThreads: [] as Thread[],
   selectedThread: null,
   selectedThreadId: null,
   isLoading: false,
@@ -57,6 +61,11 @@ export const useStore = create<AppState>((set) => ({
   setSections: (sections) => set({ sections }),
 
   setThreads: (threads) => set({ threads }),
+  setFullThreads: (fullThreads) => set({ fullThreads }),
+  addFullThread: (thread) =>
+    set((state) => ({
+      fullThreads: [...state.fullThreads, thread],
+    })),
   setSelectedThread: (selectedThread) => set({ selectedThread }),
   setSelectedThreadId: (selectedThreadId) => set({ selectedThreadId }),
 
