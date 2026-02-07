@@ -1,5 +1,4 @@
 import React from 'react';
-import { MessageSquare } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { AGENTS, type AgentId } from '../constants/agents';
 import { DISCUSSION_TYPES, type DiscussionType } from '../constants/discussion';
@@ -22,9 +21,8 @@ export const DiscussionList: React.FC<DiscussionListProps> = ({ onSelect }) => {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="p-4 border-b border-gray-200">
-        <h2 className="text-base font-medium text-gray-900">Discussions</h2>
-        <p className="text-xs text-gray-500 mt-1">{threads.length} threads</p>
+      <div className="p-3 text-xs text-gray-500 border-b border-gray-100">
+        {threads.length} threads
       </div>
 
       <div className="divide-y divide-gray-100">
@@ -66,21 +64,21 @@ const ThreadListItemView: React.FC<ThreadListItemViewProps> = ({
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         {isDiscussion ? (
-          <div className="w-6 h-6 rounded bg-gray-100 border border-gray-200 flex items-center justify-center">
-            <MessageSquare size={14} className="text-gray-600" />
-          </div>
+          <>
+            <span className="text-base">💬</span>
+            <span className="text-xs text-gray-500">Discussion</span>
+            {discussionType && (
+              <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                {DISCUSSION_TYPES[discussionType]?.label || discussionType}
+              </span>
+            )}
+          </>
         ) : (
-          <AgentDot agentId={thread.participants[0] as AgentId} />
-        )}
-
-        <span className="text-xs text-gray-500">
-          {isDiscussion ? 'Discussion' : 'Comment'}
-        </span>
-
-        {discussionType && (
-          <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-            {DISCUSSION_TYPES[discussionType]?.label || discussionType}
-          </span>
+          <>
+            <span className="text-base">📝</span>
+            <span className="text-xs text-gray-500">Comment</span>
+            <AgentDot agentId={thread.participants[0] as AgentId} size="small" />
+          </>
         )}
       </div>
 
@@ -92,13 +90,14 @@ const ThreadListItemView: React.FC<ThreadListItemViewProps> = ({
       {/* Footer */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1">
-          {thread.participants.map((agentId) => (
-            <AgentDot key={agentId} agentId={agentId as AgentId} size="small" />
-          ))}
+          {isDiscussion &&
+            thread.participants.map((agentId) => (
+              <AgentDot key={agentId} agentId={agentId as AgentId} size="small" />
+            ))}
         </div>
 
         <span className="text-xs text-gray-400">
-          {thread.messageCount} {thread.messageCount === 1 ? 'msg' : 'msgs'}
+          {thread.messageCount > 1 ? `${thread.messageCount} messages` : ''}
         </span>
       </div>
     </button>
@@ -112,19 +111,16 @@ interface AgentDotProps {
 
 const AgentDot: React.FC<AgentDotProps> = ({ agentId, size = 'normal' }) => {
   const agent = AGENTS[agentId];
-  const sizeClass = size === 'small' ? 'w-4 h-4' : 'w-6 h-6';
-  const dotSize = size === 'small' ? 'w-2 h-2' : 'w-2.5 h-2.5';
+  const textSize = size === 'small' ? 'text-xs' : 'text-sm';
 
   return (
-    <div
-      className={`${sizeClass} rounded bg-white border border-gray-200 flex items-center justify-center`}
+    <span
+      className={`${textSize} font-medium px-1.5 py-0.5 rounded`}
+      style={{ backgroundColor: agent.colorLight, color: agent.color }}
       title={agent.name}
     >
-      <span
-        className={`${dotSize} rounded-full`}
-        style={{ backgroundColor: agent.color }}
-      />
-    </div>
+      {agent.name}
+    </span>
   );
 };
 
