@@ -21,15 +21,35 @@ class PDFParserService:
     # Patterns to filter out non-content sections
     FIGURE_PATTERN = re.compile(r'^(Figure|Fig\.?|Table|Appendix)\s*\d*', re.IGNORECASE)
 
+    # Patterns to filter out page headers/footers (submission numbers, conference names)
+    PAGE_HEADER_PATTERNS = [
+        re.compile(r'^Paper\s+\d+$', re.IGNORECASE),  # "Paper 579"
+        re.compile(r'^CHI\s+\d{4}', re.IGNORECASE),   # "CHI 2020, ..."
+        re.compile(r'^Page\s+\d+', re.IGNORECASE),    # "Page 5"
+        re.compile(r'^\d+\s*$'),                       # Just a number (page number)
+    ]
+
+    # Pattern to detect footnotes in paragraph text
+    FOOTNOTE_PATTERN = re.compile(
+        r'\s*\d+\s+https?://[^\s]+\s+(?:CHI|CSCW|UIST|IUI|DIS|UbiComp)\s+\d{4}[^.]*',
+        re.IGNORECASE
+    )
+
     # Minimum content length to be considered a valid section
     MIN_CONTENT_LENGTH = 100
 
     # Major section titles (case-insensitive) - these start new sections
     MAJOR_SECTIONS = {
         'abstract', 'introduction', 'background', 'related work', 'related works',
-        'literature review', 'methods', 'method', 'methodology', 'study design',
-        'materials and methods', 'results', 'findings', 'analysis',
-        'discussion', 'conclusion', 'conclusions', 'summary', 'future work',
+        'prior work', 'literature review',
+        'methods', 'method', 'methodology', 'study design', 'study methods',
+        'materials and methods', 'community selection', 'data collection',
+        'design', 'system design', 'chatbot design', 'implementation',
+        'results', 'findings', 'analysis', 'evaluation',
+        'design considerations', 'technical overview',
+        'discussion', 'discussion and implications', 'implications',
+        'conclusion', 'conclusions', 'summary', 'future work',
+        'limitations', 'limitations and future work',
         'acknowledgments', 'acknowledgements', 'references'
     }
 
@@ -111,19 +131,82 @@ class PDFParserService:
                 ))
                 order += 1
 
-        # Extract body sections - only TOP-LEVEL divs
+        # Extract body sections - handle GROBID's flat structure
         body = root.find('.//tei:body', ns)
         if body is not None:
-            # Only get direct children divs, not nested ones
-            for div in body.findall('tei:div', ns):
-                section = self._extract_section_with_subsections(div, ns, order)
+            all_divs = list(body.findall('tei:div', ns))
 
-                if section and self._is_valid_section(section):
-                    sections.append(section)
-                    order += 1
+            # First pass: identify which divs are major sections (skip page headers)
+            div_info = []
+            for div in all_divs:
+                head = div.find('tei:head', ns)
+                div_title = ""
+                if head is not None and head.text:
+                    div_title = head.text.strip()
+                    div_title = re.sub(r'^\d+(\.\d+)*\s*', '', div_title).strip()
 
-        # Post-process: merge orphan sections and clean up
-        sections = self._post_process_sections(sections)
+                # Skip page headers/footers
+                if self._is_page_header(div_title):
+                    continue
+
+                is_major = self._is_major_section(div_title) if div_title else False
+                div_info.append((div, div_title, is_major))
+
+            # Second pass: group divs - major sections collect subsequent non-major divs
+            i = 0
+            while i < len(div_info):
+                div, div_title, is_major = div_info[i]
+
+                if is_major:
+                    # Collect this div's content
+                    paragraphs = []
+                    subsection_titles = []
+
+                    # Get paragraphs from this major section div
+                    for p in div.findall('tei:p', ns):
+                        p_text = self._extract_all_text(p, ns)
+                        p_text = self._clean_paragraph(p_text)
+                        if p_text.strip():
+                            paragraphs.append(p_text.strip())
+
+                    # Look ahead and collect subsequent non-major divs as subsections
+                    j = i + 1
+                    while j < len(div_info) and not div_info[j][2]:  # while not major
+                        sub_div, sub_title, _ = div_info[j]
+                        # Add subsection title if it's not a page header
+                        if sub_title and not self._is_page_header(sub_title):
+                            subsection_titles.append(sub_title)
+                            paragraphs.append(f"### {sub_title}")
+                        for p in sub_div.findall('tei:p', ns):
+                            p_text = self._extract_all_text(p, ns)
+                            p_text = self._clean_paragraph(p_text)
+                            if p_text.strip():
+                                paragraphs.append(p_text.strip())
+                        j += 1
+
+                    if paragraphs:
+                        content = "\n\n".join(paragraphs)
+                        section = ParsedSection(
+                            section_id=f"section_{order}",
+                            title=self._clean_title(div_title),
+                            content=content,
+                            order=order,
+                            subsections=subsection_titles
+                        )
+                        if self._is_valid_section(section):
+                            sections.append(section)
+                            order += 1
+
+                    i = j  # Skip to next major section
+                else:
+                    # Orphan non-major section (no preceding major section)
+                    section = self._extract_section_simple(div, ns, order)
+                    if section and self._is_valid_section(section):
+                        sections.append(section)
+                        order += 1
+                    i += 1
+
+        # No need for post-processing since we handle merging above
 
         # If no sections found, try to get all text as one section
         if not sections:
@@ -149,6 +232,50 @@ class PDFParserService:
                 for s in sections
             ]
         }
+
+    def _collect_all_divs(self, element, ns) -> list:
+        """Recursively collect all divs from element into a flat list."""
+        divs = []
+        for div in element.findall('tei:div', ns):
+            divs.append(div)
+            # Recursively collect nested divs
+            divs.extend(self._collect_all_divs(div, ns))
+        return divs
+
+    def _extract_section_simple(self, div, ns, order: int) -> Optional[ParsedSection]:
+        """
+        Extract a section from a div, only including direct paragraphs (not nested divs).
+        """
+        # Get section title
+        head = div.find('tei:head', ns)
+        section_title = ""
+        if head is not None and head.text:
+            section_title = head.text.strip()
+            # Clean up numbering like "2.1" from title
+            section_title = re.sub(r'^\d+(\.\d+)*\s*', '', section_title).strip()
+
+        if not section_title:
+            section_title = f"Section {order + 1}"
+
+        # Only collect direct paragraphs (not from nested divs)
+        paragraphs = []
+        for p in div.findall('tei:p', ns):  # Direct children only
+            p_text = self._extract_all_text(p, ns)
+            if p_text.strip():
+                paragraphs.append(p_text.strip())
+
+        if not paragraphs:
+            return None
+
+        content = "\n\n".join(paragraphs)
+
+        return ParsedSection(
+            section_id=f"section_{order}",
+            title=section_title,
+            content=content,
+            order=order,
+            subsections=[]
+        )
 
     def _extract_section_with_subsections(self, div, ns, order: int) -> Optional[ParsedSection]:
         """
@@ -277,6 +404,11 @@ class PDFParserService:
         # Remove leading numbers and punctuation
         clean_title = re.sub(r'^[\d\.\s]+', '', normalized)
 
+        # All-caps titles are typically major sections (e.g., "INTRODUCTION", "FINDINGS")
+        original_clean = re.sub(r'^[\d\.\s]+', '', title.strip())
+        if original_clean.isupper() and len(original_clean) > 3:
+            return True
+
         # Check exact match with major sections
         if clean_title in self.MAJOR_SECTIONS:
             return True
@@ -287,6 +419,32 @@ class PDFParserService:
                 return True
 
         return False
+
+    def _is_page_header(self, title: str) -> bool:
+        """Check if a title is a page header/footer that should be skipped."""
+        if not title:
+            return False
+        for pattern in self.PAGE_HEADER_PATTERNS:
+            if pattern.match(title.strip()):
+                return True
+        return False
+
+    def _clean_paragraph(self, text: str) -> str:
+        """Clean paragraph text by removing footnotes and other artifacts."""
+        if not text:
+            return text
+        # Remove inline footnotes like "8 https://nightbot.tv/ CHI 2020, ..."
+        text = self.FOOTNOTE_PATTERN.sub('', text)
+        # Remove standalone footnote numbers at end of sentences
+        text = re.sub(r'\s+\d+\s*$', '', text)
+        # Remove inline page headers like "Paper 579" or "CHI 2020, April 25-30, Honolulu, HI, USA"
+        text = re.sub(r'\bPaper\s+\d+\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bCHI\s+\d{4},\s+[A-Za-z]+\s+\d+-\d+,\s+\d{4},\s+[A-Za-z,\s]+USA\b', '', text, flags=re.IGNORECASE)
+        # Remove footnote reference numbers like "8 prior to" -> "prior to"
+        text = re.sub(r'\s+\d+\s+(?=prior|before|after|following|during)', ' ', text)
+        # Clean up extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
 
     def _clean_title(self, title: str) -> str:
         """Clean up section title."""
