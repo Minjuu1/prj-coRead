@@ -51,10 +51,10 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
       <div className="p-4 border-b border-gray-200">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 mb-3"
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-3"
         >
-          <ArrowLeft size={16} />
-          Back to list
+          <ArrowLeft size={14} />
+          Close
         </button>
 
         <div className="flex items-center gap-2 mb-2">
@@ -131,11 +131,8 @@ const MessageView: React.FC<MessageViewProps> = ({ message }) => {
           {isUser ? (
             <span className="text-xs font-medium text-gray-500">You</span>
           ) : (
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: agent?.color }}
-              />
+            <div className="flex items-center gap-1">
+              <span className="text-sm">{agent?.emoji}</span>
               <span
                 className="text-xs font-medium"
                 style={{ color: agent?.color }}
@@ -160,7 +157,6 @@ const MessageView: React.FC<MessageViewProps> = ({ message }) => {
             !isUser
               ? {
                   backgroundColor: agent?.colorLight,
-                  borderLeft: `3px solid ${agent?.color}`,
                 }
               : undefined
           }
@@ -205,10 +201,7 @@ const AgentBadge: React.FC<AgentBadgeProps> = ({ agentId }) => {
         color: agent.color,
       }}
     >
-      <span
-        className="w-1.5 h-1.5 rounded-full"
-        style={{ backgroundColor: agent.color }}
-      />
+      <span>{agent.emoji}</span>
       {agent.name}
     </span>
   );

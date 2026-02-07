@@ -1,5 +1,4 @@
-import React, { useMemo } from 'react';
-import { MessageSquare } from 'lucide-react';
+import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { AGENTS, type AgentId } from '../constants/agents';
 import { COLORS } from '../constants/colors';
@@ -69,7 +68,7 @@ export const TextViewer: React.FC<TextViewerProps> = ({ onThreadClick }) => {
 
   return (
     <div className="h-full overflow-auto p-6">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-3xl">
         {sections.map((section) => (
           <SectionView
             key={section.sectionId}
@@ -97,7 +96,34 @@ const SectionView: React.FC<SectionViewProps> = ({
   selectedThreadId,
   onThreadClick,
 }) => {
-  // Render content with highlights and thread buttons
+  const [buttonPositions, setButtonPositions] = useState<Record<string, number>>({});
+  const highlightRefs = useRef<Record<string, HTMLSpanElement | null>>({});
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Calculate button positions after render
+  useEffect(() => {
+    const updatePositions = () => {
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const positions: Record<string, number> = {};
+
+      threads.forEach((thread) => {
+        const el = highlightRefs.current[thread.threadId];
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          positions[thread.threadId] = rect.top - containerRect.top;
+        }
+      });
+
+      setButtonPositions(positions);
+    };
+
+    updatePositions();
+    window.addEventListener('resize', updatePositions);
+    return () => window.removeEventListener('resize', updatePositions);
+  }, [threads, section.content]);
+
+  // Render content with highlights (no buttons inside)
   const renderContent = () => {
     if (threads.length === 0) {
       return (
@@ -123,7 +149,7 @@ const SectionView: React.FC<SectionViewProps> = ({
         );
       }
 
-      // Add highlighted text with button
+      // Add highlighted text (no button here)
       const isSelected = thread.threadId === selectedThreadId;
       const highlightStyle = isSelected
         ? { backgroundColor: COLORS.highlight }
@@ -132,15 +158,10 @@ const SectionView: React.FC<SectionViewProps> = ({
       elements.push(
         <span
           key={`highlight-${idx}`}
-          className="relative inline"
+          ref={(el) => { highlightRefs.current[thread.threadId] = el; }}
           style={highlightStyle}
         >
           {section.content.slice(startOffset, endOffset)}
-          <ThreadButton
-            thread={thread}
-            isSelected={isSelected}
-            onClick={() => onThreadClick(thread.threadId)}
-          />
         </span>
       );
 
@@ -166,7 +187,28 @@ const SectionView: React.FC<SectionViewProps> = ({
       <h2 className="text-lg font-medium text-gray-900 mb-4 pb-2 border-b border-gray-200">
         {section.title}
       </h2>
-      {renderContent()}
+      <div ref={containerRef} className="flex">
+        {/* Text content */}
+        <div className="flex-1">
+          {renderContent()}
+        </div>
+
+        {/* Button column */}
+        <div className="w-12 relative shrink-0">
+          {threads.map((thread) => (
+            <ThreadButton
+              key={thread.threadId}
+              thread={thread}
+              isSelected={thread.threadId === selectedThreadId}
+              onClick={() => {
+                console.log('[TextViewer] Button clicked, threadId:', thread.threadId);
+                onThreadClick(thread.threadId);
+              }}
+              top={buttonPositions[thread.threadId] ?? 0}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
@@ -175,62 +217,57 @@ interface ThreadButtonProps {
   thread: ThreadListItem;
   isSelected: boolean;
   onClick: () => void;
+  top: number;
 }
 
 const ThreadButton: React.FC<ThreadButtonProps> = ({
   thread,
   isSelected,
   onClick,
+  top,
 }) => {
   const isDiscussion = thread.threadType === 'discussion';
+  const agentId = thread.participants[0] as AgentId;
+  const agent = AGENTS[agentId];
+
+  const baseClasses = `
+    absolute left-2
+    w-8 h-8
+    inline-flex items-center justify-center
+    text-base
+    rounded-full
+    border border-gray-200
+    bg-white
+    shadow-sm
+    hover:shadow-md
+    hover:border-gray-300
+    transition-all
+    cursor-pointer
+    z-10
+    ${isSelected ? 'ring-2 ring-amber-300 border-amber-300 shadow-md' : ''}
+  `;
 
   if (isDiscussion) {
     return (
       <button
         onClick={onClick}
-        className={`
-          inline-flex items-center justify-center
-          w-6 h-6 ml-1 -mb-1
-          rounded border
-          text-xs
-          transition-colors
-          ${
-            isSelected
-              ? 'bg-gray-200 border-gray-400'
-              : 'bg-gray-100 border-gray-200 hover:bg-gray-200'
-          }
-        `}
+        className={baseClasses}
+        style={{ top }}
         title={thread.tensionPoint}
       >
-        <MessageSquare size={14} className="text-gray-600" />
+        💬
       </button>
     );
   }
 
-  // Comment - show agent color dot
-  const agentId = thread.participants[0] as AgentId;
-  const agent = AGENTS[agentId];
-
   return (
     <button
       onClick={onClick}
-      className={`
-        inline-flex items-center justify-center
-        w-6 h-6 ml-1 -mb-1
-        rounded border
-        transition-colors
-        ${
-          isSelected
-            ? 'bg-gray-200 border-gray-400'
-            : 'bg-white border-gray-200 hover:bg-gray-50'
-        }
-      `}
+      className={baseClasses}
+      style={{ top }}
       title={`${agent.name}: ${thread.tensionPoint}`}
     >
-      <span
-        className="w-2.5 h-2.5 rounded-full"
-        style={{ backgroundColor: agent.color }}
-      />
+      {agent.emoji}
     </button>
   );
 };
