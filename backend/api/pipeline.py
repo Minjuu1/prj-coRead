@@ -11,39 +11,20 @@ from services.pipeline_service import pipeline_service
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
 
-# Mock sections for testing (same as frontend mockData)
-MOCK_SECTIONS = [
-    {
-        "sectionId": "section_0",
-        "title": "Abstract",
-        "content": "This study investigates the challenges undergraduate students face when engaging with academic texts. Through a mixed-methods approach involving 45 participants, we examine how students approach critical reading tasks and identify key barriers to deep comprehension. Our findings reveal that students often struggle with critical analysis of academic texts, tending to focus on surface-level understanding rather than engaging with the underlying arguments and assumptions. We propose a framework for scaffolded reading instruction that addresses these challenges.",
-        "order": 0
-    },
-    {
-        "sectionId": "section_1",
-        "title": "Introduction",
-        "content": "Academic reading is a fundamental skill for success in higher education. However, many undergraduate students enter university unprepared for the demands of scholarly texts. Previous research has shown that effective academic reading requires not only comprehension of content but also the ability to critically evaluate arguments, identify assumptions, and connect ideas across texts.\n\nOur study reveals that students often struggle with critical analysis of academic texts. This difficulty manifests in several ways: students may accept claims without questioning evidence, fail to recognize implicit assumptions, or struggle to synthesize information from multiple sources. These challenges are particularly acute for first-generation college students and those from non-English speaking backgrounds.\n\nThe purpose of this study is to understand the specific barriers students face and to develop interventions that support deeper engagement with academic texts. We adopt a sociocultural perspective that views reading as a situated practice shaped by disciplinary norms and expectations.",
-        "order": 1
-    },
-    {
-        "sectionId": "section_2",
-        "title": "Methods",
-        "content": "We recruited 45 participants from undergraduate courses across three disciplines: psychology, biology, and history. Participants ranged from first-year to senior students, with a mean age of 20.3 years. The sample included 28 female and 17 male students, with 12 identifying as first-generation college students.\n\nData collection involved three components: (1) think-aloud protocols during reading tasks, (2) semi-structured interviews about reading strategies, and (3) analysis of annotated texts. Participants were asked to read and respond to two academic articles typical of their discipline.\n\nQualitative data were analyzed using thematic analysis following Braun and Clarke's six-phase approach. Two researchers independently coded transcripts, achieving an inter-rater reliability of 0.85. Quantitative measures of reading comprehension were analyzed using descriptive statistics and correlation analysis.",
-        "order": 2
-    },
-    {
-        "sectionId": "section_3",
-        "title": "Results",
-        "content": "Our analysis revealed three primary themes related to students' reading challenges:\n\nTheme 1: Surface-Level Processing\nThe majority of students (78%) demonstrated a tendency toward surface-level processing, focusing on extracting facts rather than evaluating arguments. Students frequently reported feeling overwhelmed by academic vocabulary and complex sentence structures.\n\nTheme 2: Limited Critical Questioning\nOnly 23% of students spontaneously questioned the claims or evidence presented in the texts. When prompted, many students expressed uncertainty about what constitutes valid criticism of academic work, with comments such as \"Who am I to question the expert?\"\n\nTheme 3: Disconnected Reading\nStudents rarely connected reading to their own experiences or prior knowledge. Reading was often viewed as a task to complete rather than an opportunity for intellectual engagement. This was particularly evident in students' annotations, which tended to focus on definitions rather than reactions or questions.\n\nCorrelation analysis revealed significant relationships between critical reading behaviors and academic performance (r = 0.67, p < 0.001), suggesting that reading skills are indeed predictive of broader academic success.",
-        "order": 3
-    },
-    {
-        "sectionId": "section_4",
-        "title": "Discussion",
-        "content": "Our findings highlight the need for explicit instruction in critical reading strategies. The prevalence of surface-level processing suggests that students may not understand what deeper engagement looks like or may lack the strategies to achieve it.\n\nThe reluctance to question academic texts points to broader issues of academic identity and authority. Students may need support in developing the confidence to position themselves as legitimate participants in scholarly discourse.\n\nSeveral limitations should be noted. First, our sample was drawn from a single institution, limiting generalizability. Second, the think-aloud methodology may have altered natural reading behaviors. Third, disciplinary differences in reading practices were not fully explored.\n\nFuture research should investigate the effectiveness of specific interventions, including collaborative reading activities, explicit strategy instruction, and the use of AI-assisted tools to scaffold critical analysis. Longitudinal studies tracking the development of reading skills across the undergraduate years would also be valuable.",
-        "order": 4
-    }
-]
+# Mock sections for testing - loaded from joseph.pdf parsing result
+import json
+import os
+
+_mock_sections_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "joseph_sections.json")
+if os.path.exists(_mock_sections_path):
+    with open(_mock_sections_path, "r", encoding="utf-8") as f:
+        _parsed_data = json.load(f)
+        MOCK_SECTIONS = _parsed_data.get("sections", [])
+        MOCK_DOCUMENT_TITLE = _parsed_data.get("title", "Untitled Document")
+else:
+    # Fallback if file doesn't exist
+    MOCK_SECTIONS = []
+    MOCK_DOCUMENT_TITLE = "Untitled Document"
 
 
 class GenerateRequest(BaseModel):
