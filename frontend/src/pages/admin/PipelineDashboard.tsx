@@ -3,7 +3,7 @@
  * Route: /admin/discussion-pipeline
  */
 import { useState, useRef } from 'react';
-import { Play, RefreshCw, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Upload, FileText } from 'lucide-react';
+import { Play, RefreshCw, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Upload, FileText, Download } from 'lucide-react';
 import { AGENTS } from '../../constants/agents';
 
 // Pipeline step status
@@ -26,10 +26,19 @@ interface Seed {
   keywords: string[];
 }
 
+interface MessageAction {
+  type: string;
+  query?: string;
+  sectionId?: string;
+  annotationId?: string;
+}
+
 interface Message {
   messageId: string;
   author: string;
   content: string;
+  action?: MessageAction;
+  annotationType?: string;
 }
 
 interface ThreadResult {
@@ -70,6 +79,19 @@ interface DocumentInfo {
 }
 
 const API_BASE = 'http://localhost:8000';
+
+// JSON 다운로드 유틸리티
+const downloadJson = (data: unknown, filename: string) => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 export function PipelineDashboard() {
   const [pipeline, setPipeline] = useState<PipelineState>({
@@ -276,23 +298,39 @@ export function PipelineDashboard() {
             <h1 className="text-xl font-semibold text-gray-900">Pipeline Dashboard</h1>
             <p className="text-sm text-gray-500 mt-1">Discussion Generation Pipeline Debugger</p>
           </div>
-          <button
-            onClick={runPipeline}
-            disabled={isRunning || (dataSource === 'upload' && !uploadedDocument)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isRunning ? (
-              <>
-                <RefreshCw size={16} className="animate-spin" />
-                Running...
-              </>
-            ) : (
-              <>
-                <Play size={16} />
-                Run Pipeline
-              </>
+          <div className="flex items-center gap-2">
+            {pipeline.status === 'complete' && (
+              <button
+                onClick={() => downloadJson({
+                  annotations: pipeline.annotations,
+                  seeds: pipeline.seeds,
+                  threads: pipeline.threads,
+                  exportedAt: new Date().toISOString(),
+                }, `pipeline-results-${Date.now()}.json`)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                <Download size={16} />
+                Export All
+              </button>
             )}
-          </button>
+            <button
+              onClick={runPipeline}
+              disabled={isRunning || (dataSource === 'upload' && !uploadedDocument)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRunning ? (
+                <>
+                  <RefreshCw size={16} className="animate-spin" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <Play size={16} />
+                  Run Pipeline
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -424,16 +462,29 @@ export function PipelineDashboard() {
 
         {/* Phase 1: Annotations */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <button
-            onClick={() => toggleSection('annotations')}
-            className="w-full flex items-center gap-2 p-4 text-left hover:bg-gray-50"
-          >
-            {expandedSections.annotations ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <span className="font-medium text-gray-900">Phase 1: Agent Annotations</span>
-            <span className="text-sm text-gray-500 ml-auto">
-              {Object.values(pipeline.annotations).flat().length} annotations
-            </span>
-          </button>
+          <div className="flex items-center p-4">
+            <button
+              onClick={() => toggleSection('annotations')}
+              className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
+            >
+              {expandedSections.annotations ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+              <span className="font-medium text-gray-900">Phase 1: Agent Annotations</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">
+                {Object.values(pipeline.annotations).flat().length} annotations
+              </span>
+              {Object.keys(pipeline.annotations).length > 0 && (
+                <button
+                  onClick={() => downloadJson(pipeline.annotations, `annotations-${Date.now()}.json`)}
+                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                  title="Download annotations"
+                >
+                  <Download size={16} />
+                </button>
+              )}
+            </div>
+          </div>
 
           {expandedSections.annotations && Object.keys(pipeline.annotations).length > 0 && (
             <div className="border-t border-gray-200 p-4 space-y-4">
@@ -479,14 +530,27 @@ export function PipelineDashboard() {
 
         {/* Phase 2: Seeds */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <button
-            onClick={() => toggleSection('seeds')}
-            className="w-full flex items-center gap-2 p-4 text-left hover:bg-gray-50"
-          >
-            {expandedSections.seeds ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <span className="font-medium text-gray-900">Phase 2: Discussion Seeds</span>
-            <span className="text-sm text-gray-500 ml-auto">{pipeline.seeds.length} seeds</span>
-          </button>
+          <div className="flex items-center p-4">
+            <button
+              onClick={() => toggleSection('seeds')}
+              className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
+            >
+              {expandedSections.seeds ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+              <span className="font-medium text-gray-900">Phase 2: Discussion Seeds</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">{pipeline.seeds.length} seeds</span>
+              {pipeline.seeds.length > 0 && (
+                <button
+                  onClick={() => downloadJson(pipeline.seeds, `seeds-${Date.now()}.json`)}
+                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                  title="Download seeds"
+                >
+                  <Download size={16} />
+                </button>
+              )}
+            </div>
+          </div>
 
           {expandedSections.seeds && pipeline.seeds.length > 0 && (
             <div className="border-t border-gray-200 p-4 space-y-3">
@@ -525,14 +589,27 @@ export function PipelineDashboard() {
 
         {/* Phase 3-4: Threads */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <button
-            onClick={() => toggleSection('threads')}
-            className="w-full flex items-center gap-2 p-4 text-left hover:bg-gray-50"
-          >
-            {expandedSections.threads ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-            <span className="font-medium text-gray-900">Phase 3-4: Generated Threads</span>
-            <span className="text-sm text-gray-500 ml-auto">{pipeline.threads.length} threads</span>
-          </button>
+          <div className="flex items-center p-4">
+            <button
+              onClick={() => toggleSection('threads')}
+              className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
+            >
+              {expandedSections.threads ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+              <span className="font-medium text-gray-900">Phase 3-4: Generated Threads</span>
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">{pipeline.threads.length} threads</span>
+              {pipeline.threads.length > 0 && (
+                <button
+                  onClick={() => downloadJson(pipeline.threads, `threads-${Date.now()}.json`)}
+                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                  title="Download threads"
+                >
+                  <Download size={16} />
+                </button>
+              )}
+            </div>
+          </div>
 
           {expandedSections.threads && pipeline.threads.length > 0 && (
             <div className="border-t border-gray-200 p-4 space-y-4">
@@ -576,8 +653,23 @@ export function PipelineDashboard() {
                             style={{ backgroundColor: getAgentColor(msg.author) }}
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-gray-500 capitalize mb-1">{msg.author}</p>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-xs font-medium text-gray-500 capitalize">{msg.author}</p>
+                              {msg.action?.type && (
+                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                  {msg.action.type}
+                                </span>
+                              )}
+                              {msg.annotationType && (
+                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                                  {msg.annotationType}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-700">{msg.content}</p>
+                            {msg.action?.query && (
+                              <p className="text-xs text-gray-500 mt-1 italic">Search: "{msg.action.query}"</p>
+                            )}
                           </div>
                         </div>
                       ))}
