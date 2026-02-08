@@ -58,6 +58,36 @@ function App() {
     }
   }, [document, setDocument, setSections, setThreads, setFullThreads]);
 
+  // Resize panel handler
+  const handleMouseDown = () => {
+    isResizing.current = true;
+    window.document.body.style.cursor = 'col-resize';
+    window.document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+      setLeftPanelWidth(Math.min(70, Math.max(30, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      isResizing.current = false;
+      window.document.body.style.cursor = '';
+      window.document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   // Handle document upload complete
   const handleUploadComplete = useCallback(
     (uploadedDocument: Document, threads: unknown[]) => {
@@ -202,35 +232,6 @@ function App() {
     handleThreadSelect(threadId);
     setIsSidebarOpen(false);
   };
-
-  const handleMouseDown = () => {
-    isResizing.current = true;
-    window.document.body.style.cursor = 'col-resize';
-    window.document.body.style.userSelect = 'none';
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
-      setLeftPanelWidth(Math.min(70, Math.max(30, newWidth)));
-    };
-
-    const handleMouseUp = () => {
-      isResizing.current = false;
-      window.document.body.style.cursor = '';
-      window.document.body.style.userSelect = '';
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, []);
 
   // Document exists, show reader view
   return (
