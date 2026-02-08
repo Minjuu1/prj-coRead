@@ -6,6 +6,10 @@ from datetime import datetime
 AgentId = Literal['instrumental', 'critical', 'aesthetic']
 ThreadType = Literal['comment', 'discussion']
 DiscussionType = Literal['position_taking', 'deepening', 'connecting']
+AnnotationType = Literal['confusing', 'challenge', 'highlight', 'connect', 'probe', 'summarize']
+
+# TODO: Enable when implementing memory-based discussions
+# AgentActionType = Literal['speak', 'search', 'reference', 'recall']
 
 
 class Anchor(BaseModel):
@@ -22,6 +26,14 @@ class MessageReference(BaseModel):
     text: str
 
 
+# TODO: Enable when implementing memory-based discussions
+# class AgentAction(BaseModel):
+#     type: AgentActionType
+#     query: Optional[str] = None  # for search action
+#     annotationId: Optional[str] = None  # for recall action
+#     sectionId: Optional[str] = None  # for reference action
+
+
 class Message(BaseModel):
     messageId: str
     threadId: str
@@ -29,6 +41,8 @@ class Message(BaseModel):
     content: str
     references: List[MessageReference] = []
     taggedAgent: Optional[AgentId] = None
+    # action: Optional[AgentAction] = None  # TODO: Enable for memory-based discussions
+    annotationType: Optional[AnnotationType] = None
     timestamp: datetime
 
     class Config:

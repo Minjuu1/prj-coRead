@@ -4,7 +4,7 @@ Generate multi-turn discussions between agents based on seeds.
 """
 
 from config.agents import AGENTS
-from config.discussion import DISCUSSION_TYPES
+from config.discussion import DISCUSSION_TYPES, ANNOTATION_TYPES
 
 
 def get_discussion_prompt(
@@ -35,6 +35,12 @@ def get_discussion_prompt(
             relevant_content = section['content']
             break
 
+    # Build annotation types description
+    annotation_types_text = "\n".join([
+        f"- {t.id}: {t.description}"
+        for t in ANNOTATION_TYPES.values()
+    ])
+
     system_prompt = f"""You are simulating an academic discussion between readers with different perspectives.
 
 <Discussion Context>
@@ -47,6 +53,11 @@ Type Guidance: {type_guidance}
 {participant_info}
 </Participants>
 
+<Annotation Types>
+Agents can mark their message with one of these types to indicate their stance:
+{annotation_types_text}
+</Annotation Types>
+
 <Guidelines>
 - Each message should be 2-4 sentences, conversational but substantive
 - Agents should respond to each other, not just state their views
@@ -54,7 +65,11 @@ Type Guidance: {type_guidance}
 - Show genuine intellectual engagement, not just disagreement
 - Build on previous messages to deepen the discussion
 - Stay focused on the tension point while exploring different angles
+- Choose an appropriate annotation type for each message
 </Guidelines>"""
+
+    # Generate annotation type options from config
+    annotation_options = " | ".join(ANNOTATION_TYPES.keys())
 
     user_prompt = f"""Generate a {num_turns}-turn discussion about this tension point.
 
@@ -76,7 +91,8 @@ Return a JSON object with a "messages" array:
   "messages": [
     {{
       "author": "instrumental | critical | aesthetic",
-      "content": "The message content (2-4 sentences)"
+      "content": "The message content (2-4 sentences)",
+      "annotationType": "{annotation_options}"
     }}
   ]
 }}
@@ -87,6 +103,7 @@ Return a JSON object with a "messages" array:
 - Alternate between agents, ensuring each speaks at least once
 - Later messages should build on earlier ones
 - End with a message that either synthesizes insights or opens new questions
+- Choose annotation types that fit each agent's perspective
 
 Generate the {num_turns}-turn discussion now."""
 
@@ -111,11 +128,24 @@ def get_comment_prompt(
             relevant_content = section['content']
             break
 
+    # Build annotation types description
+    annotation_types_text = "\n".join([
+        f"- {t.id}: {t.description}"
+        for t in ANNOTATION_TYPES.values()
+    ])
+
+    # Generate annotation type options from config
+    annotation_options = " | ".join(ANNOTATION_TYPES.keys())
+
     system_prompt = f"""You are a reader with the following perspective:
 
 <Your Reading Stance: {agent.name}>
 {agent.stance_description}
 </Your Reading Stance>
+
+<Annotation Types>
+{annotation_types_text}
+</Annotation Types>
 
 You are writing a thoughtful comment about a specific passage in an academic text."""
 
@@ -136,7 +166,8 @@ Tension Point: {seed['tensionPoint']}
 <Output Format>
 Return a JSON object:
 {{
-  "content": "Your comment (3-5 sentences) that engages with this passage from your specific reading perspective"
+  "content": "Your comment (3-5 sentences) that engages with this passage from your specific reading perspective",
+  "annotationType": "{annotation_options}"
 }}
 </Output Format>
 

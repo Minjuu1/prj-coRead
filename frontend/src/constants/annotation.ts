@@ -1,65 +1,33 @@
 export const ANNOTATION_TYPES = {
-  // 기존 타입
-  interesting: {
-    id: 'interesting',
-    label: 'Interesting',
-    description: 'Something that catches attention',
-  },
   confusing: {
     id: 'confusing',
     label: 'Confusing',
-    description: 'Something unclear or hard to understand',
+    description: 'Something unclear, ambiguous, or hard to understand',
   },
-  disagree: {
-    id: 'disagree',
-    label: 'Disagree',
-    description: 'Something to question or challenge',
+  challenge: {
+    id: 'challenge',
+    label: 'Challenge',
+    description: 'Something you disagree with, question, or want to correct',
   },
-  important: {
-    id: 'important',
-    label: 'Important',
-    description: 'Key point that matters',
-  },
-  question: {
-    id: 'question',
-    label: 'Question',
-    description: 'A question that arises from reading',
-  },
-  // 새 타입
-  tangent: {
-    id: 'tangent',
-    label: 'Tangent',
-    description: 'Going off on a related but divergent topic',
-  },
-  correct: {
-    id: 'correct',
-    label: 'Correct',
-    description: 'Correcting a misunderstanding or error',
+  highlight: {
+    id: 'highlight',
+    label: 'Highlight',
+    description: 'A noteworthy point that deserves attention',
   },
   connect: {
     id: 'connect',
     label: 'Connect',
-    description: 'Linking to another section or external concept',
-  },
-  search: {
-    id: 'search',
-    label: 'Search',
-    description: 'Need to look up more information',
-  },
-  example: {
-    id: 'example',
-    label: 'Example',
-    description: 'Providing a concrete example or experience',
+    description: 'Linking to another concept, experience, or external idea',
   },
   probe: {
     id: 'probe',
     label: 'Probe',
-    description: 'Digging deeper into the issue',
+    description: 'Digging deeper into the issue or asking follow-up questions',
   },
   summarize: {
     id: 'summarize',
     label: 'Summarize',
-    description: 'Summarizing or synthesizing the discussion so far',
+    description: 'Synthesizing or summarizing the key points',
   },
 } as const;
 

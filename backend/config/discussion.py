@@ -45,30 +45,35 @@ class AnnotationTypeConfig:
     description: str
 
 ANNOTATION_TYPES: Dict[str, AnnotationTypeConfig] = {
-    "interesting": AnnotationTypeConfig(
-        id="interesting",
-        label="Interesting",
-        description="Something that catches your attention or seems noteworthy",
-    ),
     "confusing": AnnotationTypeConfig(
         id="confusing",
         label="Confusing",
         description="Something unclear, ambiguous, or hard to understand",
     ),
-    "disagree": AnnotationTypeConfig(
-        id="disagree",
-        label="Disagree",
-        description="Something you question, doubt, or would challenge",
+    "challenge": AnnotationTypeConfig(
+        id="challenge",
+        label="Challenge",
+        description="Something you disagree with, question, or want to correct",
     ),
-    "important": AnnotationTypeConfig(
-        id="important",
-        label="Important",
-        description="A key point, central argument, or crucial finding",
+    "highlight": AnnotationTypeConfig(
+        id="highlight",
+        label="Highlight",
+        description="A noteworthy point that deserves attention",
     ),
-    "question": AnnotationTypeConfig(
-        id="question",
-        label="Question",
-        description="A question that arises from reading this",
+    "connect": AnnotationTypeConfig(
+        id="connect",
+        label="Connect",
+        description="Linking to another concept, experience, or external idea",
+    ),
+    "probe": AnnotationTypeConfig(
+        id="probe",
+        label="Probe",
+        description="Digging deeper into the issue or asking follow-up questions",
+    ),
+    "summarize": AnnotationTypeConfig(
+        id="summarize",
+        label="Summarize",
+        description="Synthesizing or summarizing the key points",
     ),
 }
 
@@ -84,3 +89,36 @@ SEED_CONFIG = {
     "target_count_max": 6,
     "overlap_levels": ["exact", "paragraph", "section", "thematic"],
 }
+
+# Agent Action Types - actions agents can take during discussion
+# TODO: Enable when implementing memory-based discussions
+# @dataclass(frozen=True)
+# class AgentActionConfig:
+#     id: str
+#     label: str
+#     description: str
+#
+# AGENT_ACTIONS: Dict[str, AgentActionConfig] = {
+#     "speak": AgentActionConfig(
+#         id="speak",
+#         label="Speak",
+#         description="Simply respond in the conversation",
+#     ),
+#     "search": AgentActionConfig(
+#         id="search",
+#         label="Search",
+#         description="Look up external information to support the discussion",
+#     ),
+#     "reference": AgentActionConfig(
+#         id="reference",
+#         label="Reference",
+#         description="Quote or reference another part of the document",
+#     ),
+#     "recall": AgentActionConfig(
+#         id="recall",
+#         label="Recall",
+#         description="Recall a previous annotation from memory",
+#     ),
+# }
+#
+# AGENT_ACTION_IDS = list(AGENT_ACTIONS.keys())
