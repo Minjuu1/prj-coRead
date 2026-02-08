@@ -1,7 +1,7 @@
 import type { AgentId } from '../constants/agents';
 import type { DiscussionType } from '../constants/discussion';
 import type { AnnotationType } from '../constants/annotation';
-import type { AgentActionType } from '../constants/actions';
+// import type { AgentActionType } from '../constants/actions';  // TODO: Enable for memory-based discussions
 
 // User
 export interface User {
@@ -49,13 +49,13 @@ export interface MessageReference {
   text: string;
 }
 
-// Agent Action (what the agent did in this message)
-export interface AgentAction {
-  type: AgentActionType;
-  query?: string; // for search action
-  annotationId?: string; // for recall action
-  sectionId?: string; // for reference action
-}
+// TODO: Enable for memory-based discussions
+// export interface AgentAction {
+//   type: AgentActionType;
+//   query?: string; // for search action
+//   annotationId?: string; // for recall action
+//   sectionId?: string; // for reference action
+// }
 
 // Message
 export interface Message {
@@ -65,8 +65,8 @@ export interface Message {
   content: string;
   references: MessageReference[];
   taggedAgent?: AgentId;
-  action?: AgentAction; // what action the agent took
-  annotationType?: AnnotationType; // annotation type used in this message
+  // action?: AgentAction;  // TODO: Enable for memory-based discussions
+  annotationType?: AnnotationType;
   timestamp: string;
 }
 

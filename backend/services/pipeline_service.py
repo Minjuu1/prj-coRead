@@ -217,7 +217,6 @@ class PipelineService:
                 raw_messages = [{
                     "author": valid_participants[0],
                     "content": result.get("content", ""),
-                    "action": result.get("action"),
                     "annotationType": result.get("annotationType"),
                 }]
 
@@ -235,9 +234,6 @@ class PipelineService:
                     "references": [],
                     "timestamp": now,
                 }
-                # Add action if present
-                if "action" in msg and msg["action"]:
-                    message["action"] = msg["action"]
                 # Add annotationType if present
                 if "annotationType" in msg and msg["annotationType"]:
                     message["annotationType"] = msg["annotationType"]

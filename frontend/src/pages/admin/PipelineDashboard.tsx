@@ -26,18 +26,19 @@ interface Seed {
   keywords: string[];
 }
 
-interface MessageAction {
-  type: string;
-  query?: string;
-  sectionId?: string;
-  annotationId?: string;
-}
+// TODO: Enable for memory-based discussions
+// interface MessageAction {
+//   type: string;
+//   query?: string;
+//   sectionId?: string;
+//   annotationId?: string;
+// }
 
 interface Message {
   messageId: string;
   author: string;
   content: string;
-  action?: MessageAction;
+  // action?: MessageAction;  // TODO: Enable for memory-based discussions
   annotationType?: string;
 }
 
@@ -655,11 +656,6 @@ export function PipelineDashboard() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-xs font-medium text-gray-500 capitalize">{msg.author}</p>
-                              {msg.action?.type && (
-                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
-                                  {msg.action.type}
-                                </span>
-                              )}
                               {msg.annotationType && (
                                 <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
                                   {msg.annotationType}
@@ -667,9 +663,6 @@ export function PipelineDashboard() {
                               )}
                             </div>
                             <p className="text-sm text-gray-700">{msg.content}</p>
-                            {msg.action?.query && (
-                              <p className="text-xs text-gray-500 mt-1 italic">Search: "{msg.action.query}"</p>
-                            )}
                           </div>
                         </div>
                       ))}
