@@ -123,13 +123,36 @@ const SectionView: React.FC<SectionViewProps> = ({
     return () => window.removeEventListener('resize', updatePositions);
   }, [threads, section.content]);
 
+  // Render text with markdown-style headers (### ) styled as subsection headers
+  const renderTextWithHeaders = (text: string, keyPrefix: string) => {
+    // Split by lines that start with ###
+    const parts = text.split(/(\n### [^\n]+)/);
+
+    return parts.map((part, i) => {
+      if (part.startsWith('\n### ')) {
+        // Subsection header
+        const headerText = part.slice(5); // Remove '\n### '
+        return (
+          <React.Fragment key={`${keyPrefix}-${i}`}>
+            {'\n'}
+            <span className="font-medium text-gray-800 text-base">
+              {headerText}
+            </span>
+          </React.Fragment>
+        );
+      }
+      // Regular text
+      return <React.Fragment key={`${keyPrefix}-${i}`}>{part}</React.Fragment>;
+    });
+  };
+
   // Render content with highlights (no buttons inside)
   const renderContent = () => {
     if (threads.length === 0) {
       return (
-        <p className="text-gray-900 leading-relaxed whitespace-pre-wrap">
-          {section.content}
-        </p>
+        <div className="text-gray-900 leading-relaxed whitespace-pre-wrap">
+          {renderTextWithHeaders(section.content, 'content')}
+        </div>
       );
     }
 
@@ -144,7 +167,7 @@ const SectionView: React.FC<SectionViewProps> = ({
       if (startOffset > lastIndex) {
         elements.push(
           <span key={`text-${idx}`}>
-            {section.content.slice(lastIndex, startOffset)}
+            {renderTextWithHeaders(section.content.slice(lastIndex, startOffset), `text-${idx}`)}
           </span>
         );
       }
@@ -161,7 +184,7 @@ const SectionView: React.FC<SectionViewProps> = ({
           ref={(el) => { highlightRefs.current[thread.threadId] = el; }}
           style={highlightStyle}
         >
-          {section.content.slice(startOffset, endOffset)}
+          {renderTextWithHeaders(section.content.slice(startOffset, endOffset), `highlight-${idx}`)}
         </span>
       );
 
@@ -171,14 +194,16 @@ const SectionView: React.FC<SectionViewProps> = ({
     // Add remaining text
     if (lastIndex < section.content.length) {
       elements.push(
-        <span key="text-end">{section.content.slice(lastIndex)}</span>
+        <span key="text-end">
+          {renderTextWithHeaders(section.content.slice(lastIndex), 'text-end')}
+        </span>
       );
     }
 
     return (
-      <p className="text-gray-900 leading-relaxed whitespace-pre-wrap">
+      <div className="text-gray-900 leading-relaxed whitespace-pre-wrap">
         {elements}
-      </p>
+      </div>
     );
   };
 
