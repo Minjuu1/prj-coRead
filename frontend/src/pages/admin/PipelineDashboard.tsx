@@ -91,6 +91,9 @@ export function PipelineDashboard() {
     threads: true,
   });
 
+  // Track which agents have expanded annotations
+  const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
+
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -445,7 +448,7 @@ export function PipelineDashboard() {
                     <span className="text-sm text-gray-500">({annotations.length} annotations)</span>
                   </div>
                   <div className="ml-5 space-y-2">
-                    {annotations.slice(0, 5).map((ann, i) => (
+                    {(expandedAgents[agentId] ? annotations : annotations.slice(0, 3)).map((ann, i) => (
                       <div key={i} className="text-sm p-2 bg-gray-50 rounded border border-gray-100">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="px-2 py-0.5 bg-gray-200 rounded text-xs font-medium">
@@ -453,12 +456,19 @@ export function PipelineDashboard() {
                           </span>
                           <span className="text-gray-500">{ann.sectionTitle}</span>
                         </div>
-                        <p className="text-gray-700 italic">"{ann.text?.slice(0, 100)}..."</p>
+                        <p className="text-gray-700 italic">"{ann.text?.slice(0, 150)}..."</p>
                         <p className="text-gray-600 mt-1">{ann.reasoning}</p>
                       </div>
                     ))}
-                    {annotations.length > 5 && (
-                      <p className="text-sm text-gray-500">...and {annotations.length - 5} more</p>
+                    {annotations.length > 3 && (
+                      <button
+                        onClick={() => setExpandedAgents(prev => ({ ...prev, [agentId]: !prev[agentId] }))}
+                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        {expandedAgents[agentId]
+                          ? 'Show less'
+                          : `Show all ${annotations.length} annotations`}
+                      </button>
                     )}
                   </div>
                 </div>
