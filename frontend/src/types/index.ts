@@ -1,5 +1,7 @@
 import type { AgentId } from '../constants/agents';
 import type { DiscussionType } from '../constants/discussion';
+import type { AnnotationType } from '../constants/annotation';
+import type { AgentActionType } from '../constants/actions';
 
 // User
 export interface User {
@@ -14,6 +16,7 @@ export interface Section {
   title: string;
   content: string;
   order: number;
+  subsections?: string[];
 }
 
 // Document
@@ -46,6 +49,14 @@ export interface MessageReference {
   text: string;
 }
 
+// Agent Action (what the agent did in this message)
+export interface AgentAction {
+  type: AgentActionType;
+  query?: string; // for search action
+  annotationId?: string; // for recall action
+  sectionId?: string; // for reference action
+}
+
 // Message
 export interface Message {
   messageId: string;
@@ -54,6 +65,8 @@ export interface Message {
   content: string;
   references: MessageReference[];
   taggedAgent?: AgentId;
+  action?: AgentAction; // what action the agent took
+  annotationType?: AnnotationType; // annotation type used in this message
   timestamp: string;
 }
 
@@ -78,7 +91,7 @@ export interface Annotation {
   annotationId: string;
   agentId: AgentId;
   documentId: string;
-  type: 'interesting' | 'confusing' | 'disagree' | 'important' | 'question';
+  type: AnnotationType;
   target: {
     mode: 'text' | 'section';
     text?: string;

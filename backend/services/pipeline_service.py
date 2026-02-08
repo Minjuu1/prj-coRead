@@ -214,9 +214,12 @@ class PipelineService:
                     user_prompt=user_prompt,
                     temperature=0.7,
                 )
-                raw_messages = [
-                    {"author": valid_participants[0], "content": result.get("content", "")}
-                ]
+                raw_messages = [{
+                    "author": valid_participants[0],
+                    "content": result.get("content", ""),
+                    "action": result.get("action"),
+                    "annotationType": result.get("annotationType"),
+                }]
 
             # Build thread object
             now = datetime.utcnow().isoformat()
@@ -224,14 +227,21 @@ class PipelineService:
 
             messages = []
             for i, msg in enumerate(raw_messages):
-                messages.append({
+                message = {
                     "messageId": f"msg_{uuid.uuid4().hex[:8]}",
                     "threadId": thread_id,
                     "author": msg["author"],
                     "content": msg["content"],
                     "references": [],
                     "timestamp": now,
-                })
+                }
+                # Add action if present
+                if "action" in msg and msg["action"]:
+                    message["action"] = msg["action"]
+                # Add annotationType if present
+                if "annotationType" in msg and msg["annotationType"]:
+                    message["annotationType"] = msg["annotationType"]
+                messages.append(message)
 
             thread = {
                 "threadId": thread_id,

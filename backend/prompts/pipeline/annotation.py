@@ -51,6 +51,9 @@ def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: 
     suggested_per_section = max(2, max_annotations // n_sections) if n_sections > 0 else max_annotations
     section_list_text = "\n".join([f"- {title}" for title in section_titles])
 
+    # Generate type options string from config
+    type_options = " | ".join(ANNOTATION_TYPES.keys())
+
     user_prompt = f"""Read the following academic text and generate up to {max_annotations} annotations from your perspective.
 
 <Document>
@@ -66,7 +69,7 @@ Return a JSON object with an "annotations" array:
 {{
   "annotations": [
     {{
-      "type": "interesting | confusing | disagree | important | question",
+      "type": "{type_options}",
       "sectionTitle": "The section title where this text appears",
       "text": "EXACT quoted text from the document (1-3 sentences)",
       "reasoning": "Why this stands out from your perspective (2-3 sentences)"
