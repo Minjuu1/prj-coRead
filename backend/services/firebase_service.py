@@ -15,6 +15,7 @@ class InMemoryStorage:
         self.users: Dict[str, dict] = {}
         self.documents: Dict[str, dict] = {}
         self.threads: Dict[str, dict] = {}
+        self.memories: Dict[str, dict] = {}  # {document_id}_{agent_id} -> memory
 
     def get_user(self, user_id: str) -> Optional[dict]:
         return self.users.get(user_id)
@@ -103,6 +104,32 @@ class InMemoryStorage:
         thread["messages"].append(message)
         thread["updatedAt"] = datetime.utcnow().isoformat()
         return True
+
+    # Memory operations
+    def get_agent_memory(self, document_id: str, agent_id: str) -> Optional[dict]:
+        key = f"{document_id}_{agent_id}"
+        return self.memories.get(key)
+
+    def save_agent_memory(self, memory: dict) -> str:
+        document_id = memory["documentId"]
+        agent_id = memory["agentId"]
+        key = f"{document_id}_{agent_id}"
+        self.memories[key] = memory
+        return key
+
+    def delete_document_memories(self, document_id: str) -> int:
+        """Delete all memories for a document. Returns count deleted."""
+        keys_to_delete = [k for k in self.memories.keys() if k.startswith(f"{document_id}_")]
+        for key in keys_to_delete:
+            del self.memories[key]
+        return len(keys_to_delete)
+
+    def get_document_memories(self, document_id: str) -> List[dict]:
+        """Get all agent memories for a document."""
+        return [
+            m for k, m in self.memories.items()
+            if k.startswith(f"{document_id}_")
+        ]
 
 
 class FirebaseService:
@@ -284,6 +311,50 @@ class FirebaseService:
         blob.upload_from_string(pdf_content, content_type='application/pdf')
         blob.make_public()
         return blob.public_url
+
+    # Memory operations
+    def get_agent_memory(self, document_id: str, agent_id: str) -> Optional[dict]:
+        """Get agent memory for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.get_agent_memory(document_id, agent_id)
+
+        doc = self._db.collection('memories').document(f"{document_id}_{agent_id}").get()
+        return doc.to_dict() if doc.exists else None
+
+    def save_agent_memory(self, memory: dict) -> str:
+        """Save agent memory."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.save_agent_memory(memory)
+
+        document_id = memory["documentId"]
+        agent_id = memory["agentId"]
+        key = f"{document_id}_{agent_id}"
+        self._db.collection('memories').document(key).set(memory)
+        return key
+
+    def delete_document_memories(self, document_id: str) -> int:
+        """Delete all memories for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.delete_document_memories(document_id)
+
+        memories = self._db.collection('memories').where('documentId', '==', document_id).get()
+        count = 0
+        for mem in memories:
+            mem.reference.delete()
+            count += 1
+        return count
+
+    def get_document_memories(self, document_id: str) -> List[dict]:
+        """Get all agent memories for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.get_document_memories(document_id)
+
+        memories = self._db.collection('memories').where('documentId', '==', document_id).get()
+        return [mem.to_dict() for mem in memories]
 
 
 # Singleton instance

@@ -37,50 +37,92 @@ THREAD_CONFIG = {
     "max_turns": 20,
 }
 
-# Annotation types with descriptions
+# Annotation types with descriptions - stance-specific
+# Each stance has its own vocabulary that reflects its relationship to the text
 @dataclass(frozen=True)
 class AnnotationTypeConfig:
     id: str
+    stance: str  # "instrumental" | "critical" | "aesthetic"
     label: str
     description: str
 
 ANNOTATION_TYPES: Dict[str, AnnotationTypeConfig] = {
-    "confusing": AnnotationTypeConfig(
-        id="confusing",
-        label="Confusing",
-        description="Something unclear, ambiguous, or hard to understand",
+    # Instrumental - text as resource (extract, apply, organize)
+    "extract": AnnotationTypeConfig(
+        id="extract", stance="instrumental", label="Extract",
+        description="Pulls out key concepts, definitions, or methods that can be reused or built upon",
+    ),
+    "apply": AnnotationTypeConfig(
+        id="apply", stance="instrumental", label="Apply",
+        description="Suggests how this idea could be applied in another context or project",
+    ),
+    "clarify": AnnotationTypeConfig(
+        id="clarify", stance="instrumental", label="Clarify",
+        description="Adds interpretation to make unclear parts more understandable",
+    ),
+    "gap": AnnotationTypeConfig(
+        id="gap", stance="instrumental", label="Gap",
+        description="Points out missing or insufficient information that blocks understanding",
+    ),
+
+    # Critical - text as argument (question, evaluate, deconstruct)
+    "question": AnnotationTypeConfig(
+        id="question", stance="critical", label="Question",
+        description="Raises questions about the evidence or logical connections",
     ),
     "challenge": AnnotationTypeConfig(
-        id="challenge",
-        label="Challenge",
-        description="Something you disagree with, question, or want to correct",
+        id="challenge", stance="critical", label="Challenge",
+        description="Points out weaknesses, overgeneralizations, or logical leaps in the argument",
     ),
-    "highlight": AnnotationTypeConfig(
-        id="highlight",
-        label="Highlight",
-        description="A noteworthy point that deserves attention",
+    "counter": AnnotationTypeConfig(
+        id="counter", stance="critical", label="Counter",
+        description="Offers alternative explanations or counterexamples the author didn't consider",
     ),
-    "connect": AnnotationTypeConfig(
-        id="connect",
-        label="Connect",
-        description="Linking to another concept, experience, or external idea",
+    "assumption": AnnotationTypeConfig(
+        id="assumption", stance="critical", label="Assumption",
+        description="Reveals unstated premises or ideological biases underlying the argument",
     ),
-    "probe": AnnotationTypeConfig(
-        id="probe",
-        label="Probe",
-        description="Digging deeper into the issue or asking follow-up questions",
+
+    # Aesthetic - text as encounter (resonate, connect, imagine)
+    "resonate": AnnotationTypeConfig(
+        id="resonate", stance="aesthetic", label="Resonate",
+        description="Responds to parts that personally resonate or evoke emotional reaction",
     ),
-    "summarize": AnnotationTypeConfig(
-        id="summarize",
-        label="Summarize",
-        description="Synthesizing or summarizing the key points",
+    "remind": AnnotationTypeConfig(
+        id="remind", stance="aesthetic", label="Remind",
+        description="Shares associations with personal experiences, other texts, or real-world cases",
+    ),
+    "surprise": AnnotationTypeConfig(
+        id="surprise", stance="aesthetic", label="Surprise",
+        description="Reacts to parts that broke expectations or opened new perspectives",
+    ),
+    "imagine": AnnotationTypeConfig(
+        id="imagine", stance="aesthetic", label="Imagine",
+        description="Extends the idea or imagines possibilities in different contexts",
     ),
 }
+
+# Pre-computed mapping for efficient agent-specific lookup
+ANNOTATION_TYPES_BY_AGENT: Dict[str, Dict[str, AnnotationTypeConfig]] = {
+    agent_id: {k: v for k, v in ANNOTATION_TYPES.items() if v.stance == agent_id}
+    for agent_id in ["instrumental", "critical", "aesthetic"]
+}
+
+def get_annotation_types_for_agent(agent_id: str) -> Dict[str, AnnotationTypeConfig]:
+    """Returns annotation types available for a specific agent/stance."""
+    return ANNOTATION_TYPES_BY_AGENT.get(agent_id, {})
+
+def get_all_annotation_type_ids() -> List[str]:
+    """Returns all annotation type IDs."""
+    return list(ANNOTATION_TYPES.keys())
 
 # Annotation configuration
 ANNOTATION_CONFIG = {
     "max_per_agent": 20,
-    "types": list(ANNOTATION_TYPES.keys()),  # derived from ANNOTATION_TYPES
+    "types_per_agent": {
+        agent_id: list(types.keys())
+        for agent_id, types in ANNOTATION_TYPES_BY_AGENT.items()
+    },
 }
 
 # Seed configuration

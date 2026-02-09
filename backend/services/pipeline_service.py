@@ -10,6 +10,7 @@ from typing import Optional
 from config.agents import AGENT_IDS
 from services.llm_service import llm_service
 from services.firebase_service import firebase_service
+from services.memory_service import memory_service
 from prompts.pipeline.annotation import get_annotation_prompt
 from prompts.pipeline.seed_formation import get_seed_formation_prompt
 from prompts.pipeline.discussion import get_discussion_prompt, get_comment_prompt
@@ -34,10 +35,13 @@ class PipelineService:
         """
         print(f"[Pipeline] Starting for document {document_id}")
 
+        # Initialize memory for all agents
+        memory_service.initialize_for_document(document_id)
+
         # Phase 1: Generate annotations from all agents (in parallel)
         print("[Pipeline] Phase 1: Generating annotations...")
         annotations_by_agent = await self._phase1_annotations(
-            sections, max_annotations_per_agent
+            document_id, sections, max_annotations_per_agent
         )
 
         total_annotations = sum(len(a) for a in annotations_by_agent.values())
@@ -64,7 +68,7 @@ class PipelineService:
         }
 
     async def _phase1_annotations(
-        self, sections: list[dict], max_per_agent: int
+        self, document_id: str, sections: list[dict], max_per_agent: int
     ) -> dict[str, list]:
         """Generate annotations from all three agents in parallel."""
         tasks = []
@@ -81,6 +85,10 @@ class PipelineService:
                 annotations_by_agent[agent_id] = []
             else:
                 annotations_by_agent[agent_id] = result
+                # Store annotations in agent memory
+                if result:
+                    memory_service.store_annotations(document_id, agent_id, result)
+                    print(f"[Pipeline] Stored {len(result)} annotations in {agent_id}'s memory")
 
         return annotations_by_agent
 
@@ -192,11 +200,21 @@ class PipelineService:
         # Compute anchor offset from snippetText
         anchor_info = self._compute_anchor(seed.get("snippetText", ""), target_section)
 
+        # Build memory context for each participant
+        memory_context = {}
+        for agent_id in valid_participants:
+            memory_context[agent_id] = memory_service.format_for_prompt(
+                document_id,
+                agent_id,
+                section_ids=[section_id],
+                keywords=seed.get("keywords", []),
+            )
+
         try:
             if is_discussion:
-                # Generate multi-turn discussion
+                # Generate multi-turn discussion with memory
                 system_prompt, user_prompt = get_discussion_prompt(
-                    seed, valid_participants, sections, turns
+                    seed, valid_participants, sections, turns, memory_context
                 )
                 result = await llm_service.generate_json(
                     system_prompt=system_prompt,
@@ -205,9 +223,10 @@ class PipelineService:
                 )
                 raw_messages = result.get("messages", [])
             else:
-                # Generate single comment
+                # Generate single comment with memory
+                agent_memory = memory_context.get(valid_participants[0], "")
                 system_prompt, user_prompt = get_comment_prompt(
-                    seed, valid_participants[0], sections
+                    seed, valid_participants[0], sections, agent_memory
                 )
                 result = await llm_service.generate_json(
                     system_prompt=system_prompt,
@@ -225,9 +244,11 @@ class PipelineService:
             thread_id = f"thread_{uuid.uuid4().hex[:8]}"
 
             messages = []
+            prev_author = None
             for i, msg in enumerate(raw_messages):
+                message_id = f"msg_{uuid.uuid4().hex[:8]}"
                 message = {
-                    "messageId": f"msg_{uuid.uuid4().hex[:8]}",
+                    "messageId": message_id,
                     "threadId": thread_id,
                     "author": msg["author"],
                     "content": msg["content"],
@@ -238,6 +259,20 @@ class PipelineService:
                 if "annotationType" in msg and msg["annotationType"]:
                     message["annotationType"] = msg["annotationType"]
                 messages.append(message)
+
+                # Store thought in agent memory
+                memory_service.store_thought(
+                    document_id=document_id,
+                    agent_id=msg["author"],
+                    thread_id=thread_id,
+                    message_id=message_id,
+                    content=msg["content"],
+                    tension_point=seed["tensionPoint"],
+                    annotation_type=msg.get("annotationType"),
+                    responding_to=prev_author,
+                    referenced_section_ids=[section_id],
+                )
+                prev_author = msg["author"]
 
             thread = {
                 "threadId": thread_id,

@@ -4,7 +4,7 @@ Each agent reads the document and generates annotations from their perspective.
 """
 
 from config.agents import AGENTS
-from config.discussion import ANNOTATION_TYPES
+from config.discussion import get_annotation_types_for_agent
 
 
 def get_annotation_system_prompt(agent_id: str) -> str:
@@ -39,10 +39,11 @@ def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: 
     for section in sections:
         sections_text += f"\n\n## {section['title']}\n{section['content']}"
 
-    # Generate annotation types from config
+    # Generate annotation types for this specific agent
+    agent_types = get_annotation_types_for_agent(agent_id)
     annotation_types_text = "\n".join([
         f"- {t.id}: {t.description}"
-        for t in ANNOTATION_TYPES.values()
+        for t in agent_types.values()
     ])
 
     # Generate section coverage guidance
@@ -51,8 +52,8 @@ def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: 
     suggested_per_section = max(2, max_annotations // n_sections) if n_sections > 0 else max_annotations
     section_list_text = "\n".join([f"- {title}" for title in section_titles])
 
-    # Generate type options string from config
-    type_options = " | ".join(ANNOTATION_TYPES.keys())
+    # Generate type options string for this agent
+    type_options = " | ".join(agent_types.keys())
 
     user_prompt = f"""Read the following academic text and generate up to {max_annotations} annotations from your perspective.
 

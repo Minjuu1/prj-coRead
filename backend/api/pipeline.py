@@ -7,6 +7,7 @@ from typing import Optional
 
 from services.firebase_service import firebase_service
 from services.pipeline_service import pipeline_service
+from services.memory_service import memory_service
 
 router = APIRouter(prefix="/pipeline", tags=["pipeline"])
 
@@ -232,11 +233,14 @@ async def test_pipeline_with_logging():
     try:
         print("[Pipeline Dashboard] Starting pipeline with detailed logging...")
 
+        # Initialize memory for all agents
+        memory_service.initialize_for_document(document_id)
+
         # Phase 1: Annotations
         start_time = time.time()
         print("[Phase 1] Generating annotations from all agents...")
         annotations_by_agent = await pipeline_service._phase1_annotations(
-            MOCK_SECTIONS, max_per_agent=8
+            document_id, MOCK_SECTIONS, max_per_agent=8
         )
         timings["phase1"] = round(time.time() - start_time, 2)
         print(f"[Phase 1] Complete in {timings['phase1']}s")
@@ -306,11 +310,14 @@ async def generate_with_logging(
         print(f"[Pipeline Dashboard] Starting pipeline for document: {document_id}")
         print(f"[Pipeline Dashboard] Document has {len(sections)} sections")
 
+        # Initialize memory for all agents
+        memory_service.initialize_for_document(document_id)
+
         # Phase 1: Annotations
         start_time = time.time()
         print("[Phase 1] Generating annotations from all agents...")
         annotations_by_agent = await pipeline_service._phase1_annotations(
-            sections, max_per_agent=request.maxAnnotationsPerAgent
+            document_id, sections, max_per_agent=request.maxAnnotationsPerAgent
         )
         timings["phase1"] = round(time.time() - start_time, 2)
         print(f"[Phase 1] Complete in {timings['phase1']}s")

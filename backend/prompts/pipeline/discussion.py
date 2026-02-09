@@ -2,26 +2,35 @@
 Phase 3-4: Discussion Generation Prompts
 Generate multi-turn discussions between agents based on seeds.
 """
+from typing import Dict, Optional
 
 from config.agents import AGENTS
-from config.discussion import DISCUSSION_TYPES, ANNOTATION_TYPES
+from config.discussion import DISCUSSION_TYPES, get_annotation_types_for_agent
 
 
 def get_discussion_prompt(
     seed: dict,
     participants: list[str],
     sections: list[dict],
-    num_turns: int = 4
+    num_turns: int = 4,
+    memory_context: Optional[Dict[str, str]] = None,
 ) -> tuple[str, str]:
     """
     Returns (system_prompt, user_prompt) for discussion generation.
-    """
 
-    # Build participant descriptions
+    Args:
+        memory_context: Dict mapping agent_id -> formatted memory string
+    """
+    memory_context = memory_context or {}
+
+    # Build participant descriptions with memory
     participant_info = ""
     for agent_id in participants:
         agent = AGENTS[agent_id]
         participant_info += f"\n- {agent.name}: {agent.stance_description}\n"
+        # Add agent's memory if available
+        if agent_id in memory_context and memory_context[agent_id]:
+            participant_info += f"\n{memory_context[agent_id]}\n"
 
     # Get discussion type guidance
     disc_type = DISCUSSION_TYPES.get(seed.get('discussionType', 'deepening'))
@@ -35,11 +44,13 @@ def get_discussion_prompt(
             relevant_content = section['content']
             break
 
-    # Build annotation types description
-    annotation_types_text = "\n".join([
-        f"- {t.id}: {t.description}"
-        for t in ANNOTATION_TYPES.values()
-    ])
+    # Build annotation types description - each agent has their own types
+    annotation_types_text = ""
+    for agent_id in participants:
+        agent_types = get_annotation_types_for_agent(agent_id)
+        agent_name = AGENTS[agent_id].name
+        types_list = "\n".join([f"    - {t.id}: {t.description}" for t in agent_types.values()])
+        annotation_types_text += f"\n  {agent_name}:\n{types_list}\n"
 
     system_prompt = f"""You are simulating an academic discussion between readers with different perspectives.
 
@@ -53,10 +64,15 @@ Type Guidance: {type_guidance}
 {participant_info}
 </Participants>
 
-<Annotation Types>
-Agents can mark their message with one of these types to indicate their stance:
+<Annotation Types by Agent>
+Each agent MUST use only their stance-specific annotation types:
 {annotation_types_text}
-</Annotation Types>
+</Annotation Types by Agent>
+
+<Cross-Reference Guideline>
+When responding to another agent's annotation, reinterpret it through your own stance.
+For example, if Critical responds to Aesthetic's "resonate", Critical might frame their response as a "question" or "challenge" about the emotional reaction's implications.
+</Cross-Reference Guideline>
 
 <Guidelines>
 - Each message should be 2-4 sentences, conversational but substantive
@@ -65,11 +81,19 @@ Agents can mark their message with one of these types to indicate their stance:
 - Show genuine intellectual engagement, not just disagreement
 - Build on previous messages to deepen the discussion
 - Stay focused on the tension point while exploring different angles
-- Choose an appropriate annotation type for each message
+- Each agent MUST choose from their own annotation types only
 </Guidelines>"""
 
-    # Generate annotation type options from config
-    annotation_options = " | ".join(ANNOTATION_TYPES.keys())
+    # Generate annotation type options per agent for output format
+    annotation_options_per_agent = {}
+    for agent_id in participants:
+        agent_types = get_annotation_types_for_agent(agent_id)
+        annotation_options_per_agent[agent_id] = " | ".join(agent_types.keys())
+
+    annotation_options_text = "\n".join([
+        f"      - {agent_id}: {options}"
+        for agent_id, options in annotation_options_per_agent.items()
+    ])
 
     user_prompt = f"""Generate a {num_turns}-turn discussion about this tension point.
 
@@ -92,10 +116,13 @@ Return a JSON object with a "messages" array:
     {{
       "author": "instrumental | critical | aesthetic",
       "content": "The message content (2-4 sentences)",
-      "annotationType": "{annotation_options}"
+      "annotationType": "must match author's available types (see below)"
     }}
   ]
 }}
+
+Available annotationType values by author:
+{annotation_options_text}
 </Output Format>
 
 <Turn Order Guidelines>
@@ -103,7 +130,7 @@ Return a JSON object with a "messages" array:
 - Alternate between agents, ensuring each speaks at least once
 - Later messages should build on earlier ones
 - End with a message that either synthesizes insights or opens new questions
-- Choose annotation types that fit each agent's perspective
+- Each agent MUST use only their own annotation types
 
 Generate the {num_turns}-turn discussion now."""
 
@@ -114,9 +141,13 @@ def get_comment_prompt(
     seed: dict,
     agent_id: str,
     sections: list[dict],
+    agent_memory: str = "",
 ) -> tuple[str, str]:
     """
     Generate a single comment for seeds with only one relevant agent.
+
+    Args:
+        agent_memory: Formatted memory string for the agent
     """
     agent = AGENTS[agent_id]
 
@@ -128,24 +159,29 @@ def get_comment_prompt(
             relevant_content = section['content']
             break
 
-    # Build annotation types description
+    # Build annotation types description for this specific agent
+    agent_types = get_annotation_types_for_agent(agent_id)
     annotation_types_text = "\n".join([
         f"- {t.id}: {t.description}"
-        for t in ANNOTATION_TYPES.values()
+        for t in agent_types.values()
     ])
 
-    # Generate annotation type options from config
-    annotation_options = " | ".join(ANNOTATION_TYPES.keys())
+    # Generate annotation type options for this agent only
+    annotation_options = " | ".join(agent_types.keys())
+
+    # Include memory in system prompt if available
+    memory_section = f"\n{agent_memory}\n" if agent_memory else ""
 
     system_prompt = f"""You are a reader with the following perspective:
 
 <Your Reading Stance: {agent.name}>
 {agent.stance_description}
 </Your Reading Stance>
-
-<Annotation Types>
+{memory_section}
+<Your Annotation Types>
+These are the annotation types that match your reading stance:
 {annotation_types_text}
-</Annotation Types>
+</Your Annotation Types>
 
 You are writing a thoughtful comment about a specific passage in an academic text."""
 
