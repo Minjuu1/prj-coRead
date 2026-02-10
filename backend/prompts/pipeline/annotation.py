@@ -28,16 +28,19 @@ CRITICAL: The "text" field must be an EXACT quote from the document - copy it pr
 This text will be used to locate the annotation in the document."""
 
 
-def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: int = 15) -> tuple[str, str]:
+def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: int = 20) -> tuple[str, str]:
     """
     Returns (system_prompt, user_prompt) for annotation generation.
     """
     system_prompt = get_annotation_system_prompt(agent_id)
 
-    # Format sections for the prompt
+    # Format sections with approximate word counts for natural distribution
     sections_text = ""
+    section_info_lines = []
     for section in sections:
         sections_text += f"\n\n## {section['title']}\n{section['content']}"
+        word_count = len(section['content'].split())
+        section_info_lines.append(f"- {section['title']} (~{word_count} words)")
 
     # Generate annotation types for this specific agent
     agent_types = get_annotation_types_for_agent(agent_id)
@@ -46,16 +49,13 @@ def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: 
         for t in agent_types.values()
     ])
 
-    # Generate section coverage guidance
-    section_titles = [s['title'] for s in sections]
     n_sections = len(sections)
-    suggested_per_section = max(2, max_annotations // n_sections) if n_sections > 0 else max_annotations
-    section_list_text = "\n".join([f"- {title}" for title in section_titles])
+    section_list_text = "\n".join(section_info_lines)
 
     # Generate type options string for this agent
     type_options = " | ".join(agent_types.keys())
 
-    user_prompt = f"""Read the following academic text and generate up to {max_annotations} annotations from your perspective.
+    user_prompt = f"""Read the following academic text and generate exactly {max_annotations} annotations from your perspective.
 
 <Document>
 {sections_text}
@@ -83,19 +83,22 @@ Return a JSON object with an "annotations" array:
 The document has {n_sections} sections:
 {section_list_text}
 
-IMPORTANT: Distribute your annotations across ALL sections, not just one or two.
-Aim for approximately {suggested_per_section} annotations per section.
-Don't over-focus on a single section - each section likely has interesting points from your perspective.
+You should annotate across multiple sections, but distribute NATURALLY based on how much each section matters to your reading stance.
+- Longer, more substantive sections deserve more annotations
+- Shorter or less relevant sections may have fewer (or even zero)
+- It's fine to have 5+ annotations in a rich section and 0-1 in a thin one
+- Do NOT force an even split - follow your genuine reactions
 </Section Coverage>
 
 <Guidelines>
-- Generate {max_annotations} diverse annotations spread across different sections
+- You MUST generate exactly {max_annotations} annotations - no fewer
+- Use ALL {len(agent_types)} of your annotation types at least once
 - The "text" field MUST be an exact copy from the document - do not paraphrase
 - Each text selection should be 1-3 sentences (not too short, not too long)
 - Your reasoning should reflect your specific reading stance
-- Look for: assumptions, evidence quality, implications, connections, gaps
+- Go deep: multiple annotations on the same paragraph are fine if different aspects stand out
 </Guidelines>
 
-Generate your annotations now."""
+Generate your {max_annotations} annotations now."""
 
     return system_prompt, user_prompt

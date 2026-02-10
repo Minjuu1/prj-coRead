@@ -55,7 +55,7 @@ Look for productive tensions between different annotation types:
     # Format sections for reference
     sections_text = ""
     for section in sections:
-        sections_text += f"\n\n## {section['title']}\n{section['content'][:500]}..."
+        sections_text += f"\n\n## {section['title']}\n{section['content']}"
 
     # Count sections for distribution guidance
     section_titles = [s['title'] for s in sections]

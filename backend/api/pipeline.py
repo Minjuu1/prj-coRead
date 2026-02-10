@@ -29,7 +29,7 @@ else:
 
 
 class GenerateRequest(BaseModel):
-    maxAnnotationsPerAgent: int = 12
+    maxAnnotationsPerAgent: int = 20
     targetSeeds: int = 5
     turnsPerDiscussion: int = 4
 
@@ -180,7 +180,7 @@ async def test_pipeline_with_mock_data():
         result = await pipeline_service.run_full_pipeline(
             document_id=document_id,
             sections=MOCK_SECTIONS,
-            max_annotations_per_agent=8,  # Smaller for faster test
+            max_annotations_per_agent=15,  # Moderate for test
             target_seeds=4,
             turns_per_discussion=3,
         )
@@ -240,7 +240,7 @@ async def test_pipeline_with_logging():
         start_time = time.time()
         print("[Phase 1] Generating annotations from all agents...")
         annotations_by_agent = await pipeline_service._phase1_annotations(
-            document_id, MOCK_SECTIONS, max_per_agent=8
+            document_id, MOCK_SECTIONS, max_per_agent=15
         )
         timings["phase1"] = round(time.time() - start_time, 2)
         print(f"[Phase 1] Complete in {timings['phase1']}s")

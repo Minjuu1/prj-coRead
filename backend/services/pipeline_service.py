@@ -23,7 +23,7 @@ class PipelineService:
         self,
         document_id: str,
         sections: list[dict],
-        max_annotations_per_agent: int = 12,
+        max_annotations_per_agent: int = 20,
         target_seeds: int = 5,
         turns_per_discussion: int = 4,
     ) -> dict:
