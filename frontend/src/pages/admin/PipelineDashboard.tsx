@@ -5,6 +5,19 @@
 import { useState, useRef } from 'react';
 import { Play, RefreshCw, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Upload, FileText, Download } from 'lucide-react';
 import { AGENTS } from '../../constants/agents';
+import { ANNOTATION_TYPES } from '../../constants/annotation';
+
+// Annotation type → agent color mapping
+const getAnnotationTypeColor = (type: string) => {
+  const config = ANNOTATION_TYPES[type as keyof typeof ANNOTATION_TYPES];
+  if (!config) return { bg: 'bg-gray-100', text: 'text-gray-600' };
+  switch (config.stance) {
+    case 'instrumental': return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' };
+    case 'critical': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+    case 'aesthetic': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' };
+    default: return { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200' };
+  }
+};
 
 // Pipeline step status
 type StepStatus = 'pending' | 'running' | 'complete' | 'error';
@@ -503,7 +516,7 @@ export function PipelineDashboard() {
                     {(expandedAgents[agentId] ? annotations : annotations.slice(0, 3)).map((ann, i) => (
                       <div key={i} className="text-sm p-2 bg-gray-50 rounded border border-gray-100">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="px-2 py-0.5 bg-gray-200 rounded text-xs font-medium">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getAnnotationTypeColor(ann.type).bg} ${getAnnotationTypeColor(ann.type).text}`}>
                             {ann.type}
                           </span>
                           <span className="text-gray-500">{ann.sectionTitle}</span>
@@ -657,7 +670,7 @@ export function PipelineDashboard() {
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-xs font-medium text-gray-500 capitalize">{msg.author}</p>
                               {msg.annotationType && (
-                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                                <span className={`px-1.5 py-0.5 rounded text-xs ${getAnnotationTypeColor(msg.annotationType).bg} ${getAnnotationTypeColor(msg.annotationType).text}`}>
                                   {msg.annotationType}
                                 </span>
                               )}
