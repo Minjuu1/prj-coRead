@@ -1,15 +1,20 @@
 """
-Phase 2: Seed Formation Prompts
-Analyze annotations from all agents to find tension points and form discussion seeds.
+Phase 2b: Seed Formation Prompts (Cluster-based)
+
+Takes pre-clustered annotations and generates discussion seeds from each cluster.
+Replaces the old single-shot approach with cluster-aware seed generation.
 """
 
 from config.discussion import ANNOTATION_TYPES_BY_AGENT
 
 
-def get_seed_formation_prompt(annotations_by_agent: dict, sections: list[dict]) -> tuple[str, str]:
+def get_seed_formation_prompt(clusters: list[dict], sections: list[dict]) -> tuple[str, str]:
     """
-    Returns (system_prompt, user_prompt) for seed formation.
-    annotations_by_agent: {"instrumental": [...], "critical": [...], "aesthetic": [...]}
+    Returns (system_prompt, user_prompt) for seed formation from clusters.
+
+    Args:
+        clusters: Output from clustering_service.cluster_annotations()
+        sections: Document sections for context
     """
 
     # Build annotation types explanation for each stance
@@ -20,86 +25,77 @@ def get_seed_formation_prompt(annotations_by_agent: dict, sections: list[dict]) 
 
     system_prompt = f"""You are an expert at identifying productive discussion opportunities in academic reading.
 
-Your task is to analyze annotations from three different reading perspectives and identify "tension points" -
-places where different perspectives converge, conflict, or could enrich each other through discussion.
-
-The three perspectives and their annotation vocabularies:
+You will receive PRE-CLUSTERED annotations - annotations that have already been grouped by text proximity within sections.
+Your job is to examine each cluster and decide what kind of discussion seed (if any) it produces.
 
 <Stance-Specific Annotation Types>
 {stance_types_text}
-Note: Each stance has its own annotation vocabulary that reflects how they relate to text.
 - Instrumental sees text as a RESOURCE (extract, apply, clarify, gap)
 - Critical sees text as an ARGUMENT (question, challenge, counter, assumption)
 - Aesthetic sees text as an ENCOUNTER (resonate, remind, surprise, imagine)
 </Stance-Specific Annotation Types>
 
-<Finding Cross-Stance Tensions>
-Look for productive tensions between different annotation types:
-- Instrumental's "extract" vs Critical's "assumption": What one takes for granted, the other questions
-- Instrumental's "gap" vs Critical's "challenge": Different reasons for finding something incomplete
-- Aesthetic's "resonate" vs Critical's "question": Emotional response meets analytical scrutiny
-- Aesthetic's "remind" vs Instrumental's "apply": Personal connection meets practical application
-</Finding Cross-Stance Tensions>"""
+<Cross-Stance Tensions>
+Productive tensions between different annotation types:
+- Instrumental "extract" vs Critical "assumption": What one takes for granted, the other questions
+- Instrumental "gap" vs Critical "challenge": Different reasons for finding something incomplete
+- Aesthetic "resonate" vs Critical "question": Emotional response meets analytical scrutiny
+- Aesthetic "remind" vs Instrumental "apply": Personal connection meets practical application
+</Cross-Stance Tensions>"""
 
-    # Format annotations
-    annotations_text = ""
-    for agent_id, annotations in annotations_by_agent.items():
-        annotations_text += f"\n\n### {agent_id.upper()} Annotations:\n"
-        for i, ann in enumerate(annotations, 1):
-            annotations_text += f"""
-{i}. [{ann['type']}] Section: {ann.get('sectionTitle', 'Unknown')}
-   Text: "{ann['text']}"
-   Reasoning: {ann['reasoning']}
-"""
+    # Format clusters
+    clusters_text = ""
+    for cluster in clusters:
+        agents_str = ", ".join(cluster["agents"])
+        clusters_text += f"\n### {cluster['clusterId']} [{cluster['sectionTitle']}] ({cluster['overlapType']}, agents: {agents_str})\n"
+        for ann in cluster["annotations"]:
+            clusters_text += f'  - [{ann["agentId"]}:{ann["type"]}] "{ann["text"][:200]}"\n'
+            clusters_text += f'    Reasoning: {ann["reasoning"]}\n'
 
     # Format sections for reference
     sections_text = ""
     for section in sections:
         sections_text += f"\n\n## {section['title']}\n{section['content']}"
 
-    # Count sections for distribution guidance
-    section_titles = [s['title'] for s in sections]
-    num_sections = len(section_titles)
+    user_prompt = f"""Generate discussion seeds from these annotation clusters.
 
-    user_prompt = f"""Analyze these annotations from three reading perspectives and create discussion seeds.
+<Annotation Clusters>
+{clusters_text}
+</Annotation Clusters>
 
-<Annotations from All Agents>
-{annotations_text}
-</Annotations>
-
-<Document Sections (for reference)>
+<Document (for reference)>
 {sections_text}
-</Document Sections>
+</Document>
+
+<Rules>
+1. MULTI-AGENT clusters (2+ agents on overlapping text) → MUST produce a seed
+   - These are the richest: different stances noticed the same passage
+   - Discussion type depends on the tension between their annotations
+
+2. SINGLE-AGENT clusters with 2+ annotations → SHOULD produce a seed if insightful
+   - One agent noticed multiple things about the same passage
+   - Can become a comment seed (single agent exploring depth)
+
+3. STANDALONE annotations (1 agent, 1 annotation) → produce a seed only if the observation is particularly noteworthy
+   - Skip generic or surface-level observations
+   - Keep ones that are provocative, surprising, or open genuine questions
+
+4. Do NOT merge clusters - each seed maps to exactly one cluster
+</Rules>
 
 <Seed Types>
-1. DISCUSSION SEEDS (2+ agents, will become multi-turn discussions):
-   - position_taking: Critical vs Instrumental tension - questioning vs understanding
-   - deepening: Multiple perspectives probing the same question deeper
-   - connecting: Linking ideas across contexts (Aesthetic's specialty)
-
-2. COMMENT SEEDS (1 agent, will become single comments):
-   - A notable standalone observation that deserves attention
-   - Often Aesthetic's unique connections or Critical's pointed questions
-   - Mark with relevantAgents: [single_agent_id]
+- position_taking: Agents disagree or have fundamentally different readings
+- deepening: Multiple perspectives probe the same question/gap from different angles
+- connecting: Linking the text to broader contexts, experiences, or implications
 </Seed Types>
 
-<Distribution Requirements>
-MUST include:
-- 2-3 multi-agent DISCUSSION seeds (position_taking or deepening)
-- 1-2 single-agent COMMENT seeds (preserve unique observations)
-- At least 1 connecting seed (Aesthetic-driven)
-
-Section coverage:
-- Spread across at least {min(3, num_sections)} different sections
-- Don't cluster all seeds in one section
-</Distribution Requirements>
-
 <Output Format>
-Return a JSON object with a "seeds" array (total 5-7 seeds):
+Return a JSON object with a "seeds" array:
 {{
   "seeds": [
     {{
-      "tensionPoint": "What makes this a productive discussion/comment point (1-2 sentences)",
+      "clusterId": "cluster_X (which cluster this seed comes from)",
+      "tensionPoint": "What makes this worth discussing (1-2 sentences)",
       "discussionType": "position_taking | deepening | connecting",
       "snippetText": "EXACT verbatim text from the document for highlighting",
       "sectionTitle": "Section where snippetText appears",
@@ -111,13 +107,12 @@ Return a JSON object with a "seeds" array (total 5-7 seeds):
 </Output Format>
 
 <Quality Criteria>
-- position_taking: Best when Critical questions something Instrumental accepts (or vice versa)
-- deepening: Best when multiple agents notice the same gap/complexity
-- connecting: Best when Aesthetic links to experience/context others missed
-- Single-agent comments: Preserve if the observation is insightful even without debate
-- snippetText MUST be exact copy from document (will be used for text highlighting)
+- snippetText MUST be an exact copy from the document (for text highlighting)
+- tensionPoint should be specific, not generic ("the methodology" → bad, "whether 15 participants suffice for generalization" → good)
+- Every multi-agent cluster MUST get a seed
+- Be generous with single-agent seeds - more is better than fewer for research purposes
 </Quality Criteria>
 
-Generate the seeds now, ensuring you meet the distribution requirements."""
+Generate seeds now."""
 
     return system_prompt, user_prompt

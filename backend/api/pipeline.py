@@ -30,7 +30,6 @@ else:
 
 class GenerateRequest(BaseModel):
     maxAnnotationsPerAgent: int = 20
-    targetSeeds: int = 5
     turnsPerDiscussion: int = 4
 
 
@@ -78,7 +77,6 @@ async def generate_discussions(
         document_id,
         sections,
         request.maxAnnotationsPerAgent,
-        request.targetSeeds,
         request.turnsPerDiscussion,
     )
 
@@ -118,7 +116,6 @@ async def generate_discussions_sync(
             document_id=document_id,
             sections=sections,
             max_annotations_per_agent=request.maxAnnotationsPerAgent,
-            target_seeds=request.targetSeeds,
             turns_per_discussion=request.turnsPerDiscussion,
         )
 
@@ -141,7 +138,6 @@ async def run_pipeline_background(
     document_id: str,
     sections: list[dict],
     max_annotations: int,
-    target_seeds: int,
     turns: int,
 ):
     """Background task to run the pipeline."""
@@ -150,7 +146,6 @@ async def run_pipeline_background(
             document_id=document_id,
             sections=sections,
             max_annotations_per_agent=max_annotations,
-            target_seeds=target_seeds,
             turns_per_discussion=turns,
         )
 
@@ -180,8 +175,7 @@ async def test_pipeline_with_mock_data():
         result = await pipeline_service.run_full_pipeline(
             document_id=document_id,
             sections=MOCK_SECTIONS,
-            max_annotations_per_agent=15,  # Moderate for test
-            target_seeds=4,
+            max_annotations_per_agent=15,
             turns_per_discussion=3,
         )
 
@@ -214,6 +208,7 @@ class DetailedPipelineResponse(BaseModel):
     """Detailed response with all intermediate pipeline results."""
     status: str
     annotations: dict  # {agentId: [annotations]}
+    clusters: list = []  # Phase 2a output
     seeds: list
     threads: list
     timings: dict  # {phase: seconds}
@@ -226,6 +221,7 @@ async def test_pipeline_with_logging():
     This is for debugging/dashboard purposes.
     """
     import time
+    from services.clustering_service import cluster_annotations, deduplicate_cross_section, format_clusters_summary
 
     document_id = "test_doc_001"
     timings = {}
@@ -247,14 +243,27 @@ async def test_pipeline_with_logging():
         for agent_id, anns in annotations_by_agent.items():
             print(f"  - {agent_id}: {len(anns)} annotations")
 
-        # Phase 2: Seed Formation
+        # Dedup: remove same-agent cross-section duplicates
+        section_order = [s["title"] for s in MOCK_SECTIONS]
+        annotations_by_agent = deduplicate_cross_section(annotations_by_agent, section_order)
+
+        # Phase 2a: Clustering
         start_time = time.time()
-        print("[Phase 2] Forming discussion seeds...")
-        seeds = await pipeline_service._phase2_seed_formation(
-            annotations_by_agent, MOCK_SECTIONS, target_count=4
+        print("[Phase 2a] Clustering annotations...")
+        clusters = cluster_annotations(annotations_by_agent)
+        timings["phase2a"] = round(time.time() - start_time, 2)
+        multi_agent = sum(1 for c in clusters if c["agentCount"] >= 2)
+        print(f"[Phase 2a] Complete in {timings['phase2a']}s - {len(clusters)} clusters ({multi_agent} multi-agent)")
+        print(format_clusters_summary(clusters))
+
+        # Phase 2b: Seed Formation from clusters
+        start_time = time.time()
+        print("[Phase 2b] Generating seeds from clusters...")
+        seeds = await pipeline_service._phase2b_seed_formation(
+            clusters, MOCK_SECTIONS
         )
-        timings["phase2"] = round(time.time() - start_time, 2)
-        print(f"[Phase 2] Complete in {timings['phase2']}s - {len(seeds)} seeds formed")
+        timings["phase2b"] = round(time.time() - start_time, 2)
+        print(f"[Phase 2b] Complete in {timings['phase2b']}s - {len(seeds)} seeds formed")
 
         # Phase 3-4: Thread Generation
         start_time = time.time()
@@ -269,12 +278,12 @@ async def test_pipeline_with_logging():
         for thread in threads:
             firebase_service.save_thread(thread)
 
-        # Return full thread data for frontend
         return DetailedPipelineResponse(
             status="complete",
             annotations=annotations_by_agent,
+            clusters=clusters,
             seeds=seeds,
-            threads=threads,  # Full thread data including anchor, messages, etc.
+            threads=threads,
             timings=timings,
         )
 
@@ -294,6 +303,7 @@ async def generate_with_logging(
     Returns all intermediate results for debugging/dashboard.
     """
     import time
+    from services.clustering_service import cluster_annotations, deduplicate_cross_section, format_clusters_summary
 
     # Get document
     document = firebase_service.get_document(document_id)
@@ -324,14 +334,27 @@ async def generate_with_logging(
         for agent_id, anns in annotations_by_agent.items():
             print(f"  - {agent_id}: {len(anns)} annotations")
 
-        # Phase 2: Seed Formation
+        # Dedup: remove same-agent cross-section duplicates
+        section_order = [s["title"] for s in sections]
+        annotations_by_agent = deduplicate_cross_section(annotations_by_agent, section_order)
+
+        # Phase 2a: Clustering
         start_time = time.time()
-        print("[Phase 2] Forming discussion seeds...")
-        seeds = await pipeline_service._phase2_seed_formation(
-            annotations_by_agent, sections, target_count=request.targetSeeds
+        print("[Phase 2a] Clustering annotations...")
+        clusters = cluster_annotations(annotations_by_agent)
+        timings["phase2a"] = round(time.time() - start_time, 2)
+        multi_agent = sum(1 for c in clusters if c["agentCount"] >= 2)
+        print(f"[Phase 2a] Complete in {timings['phase2a']}s - {len(clusters)} clusters ({multi_agent} multi-agent)")
+        print(format_clusters_summary(clusters))
+
+        # Phase 2b: Seed Formation from clusters
+        start_time = time.time()
+        print("[Phase 2b] Generating seeds from clusters...")
+        seeds = await pipeline_service._phase2b_seed_formation(
+            clusters, sections
         )
-        timings["phase2"] = round(time.time() - start_time, 2)
-        print(f"[Phase 2] Complete in {timings['phase2']}s - {len(seeds)} seeds formed")
+        timings["phase2b"] = round(time.time() - start_time, 2)
+        print(f"[Phase 2b] Complete in {timings['phase2b']}s - {len(seeds)} seeds formed")
 
         # Phase 3-4: Thread Generation
         start_time = time.time()
@@ -346,12 +369,12 @@ async def generate_with_logging(
         for thread in threads:
             firebase_service.save_thread(thread)
 
-        # Return full thread data for frontend
         return DetailedPipelineResponse(
             status="complete",
             annotations=annotations_by_agent,
+            clusters=clusters,
             seeds=seeds,
-            threads=threads,  # Full thread data including anchor, messages, etc.
+            threads=threads,
             timings=timings,
         )
 

@@ -1,6 +1,6 @@
 """
 Pipeline Service - Orchestrates the full discussion generation pipeline.
-Phase 1: Annotation → Phase 2: Seed Formation → Phase 3-4: Thread Generation
+Phase 1: Annotation → Phase 2a: Clustering → Phase 2b: Seed Formation → Phase 3-4: Thread Generation
 """
 import asyncio
 import uuid
@@ -11,6 +11,7 @@ from config.agents import AGENT_IDS
 from services.llm_service import llm_service
 from services.firebase_service import firebase_service
 from services.memory_service import memory_service
+from services.clustering_service import cluster_annotations, deduplicate_cross_section, format_clusters_summary
 from prompts.pipeline.annotation import get_annotation_prompt
 from prompts.pipeline.seed_formation import get_seed_formation_prompt
 from prompts.pipeline.discussion import get_discussion_prompt, get_comment_prompt
@@ -24,11 +25,11 @@ class PipelineService:
         document_id: str,
         sections: list[dict],
         max_annotations_per_agent: int = 20,
-        target_seeds: int = 5,
         turns_per_discussion: int = 4,
     ) -> dict:
         """
-        Run the complete pipeline: Annotation → Seed Formation → Thread Generation
+        Run the complete pipeline:
+        Phase 1: Annotation → Phase 2a: Clustering → Phase 2b: Seed Formation → Phase 3-4: Thread Generation
 
         Returns:
             dict with "threads" list ready to be saved
@@ -47,12 +48,21 @@ class PipelineService:
         total_annotations = sum(len(a) for a in annotations_by_agent.values())
         print(f"[Pipeline] Phase 1 complete: {total_annotations} total annotations")
 
-        # Phase 2: Form discussion seeds
-        print("[Pipeline] Phase 2: Forming discussion seeds...")
-        seeds = await self._phase2_seed_formation(
-            annotations_by_agent, sections, target_seeds
-        )
-        print(f"[Pipeline] Phase 2 complete: {len(seeds)} seeds formed")
+        # Dedup: remove same-agent cross-section duplicates
+        section_order = [s["title"] for s in sections]
+        annotations_by_agent = deduplicate_cross_section(annotations_by_agent, section_order)
+
+        # Phase 2a: Cluster annotations by section + text proximity
+        print("[Pipeline] Phase 2a: Clustering annotations...")
+        clusters = cluster_annotations(annotations_by_agent)
+        multi_agent = sum(1 for c in clusters if c["agentCount"] >= 2)
+        print(f"[Pipeline] Phase 2a complete: {len(clusters)} clusters ({multi_agent} multi-agent)")
+        print(format_clusters_summary(clusters))
+
+        # Phase 2b: Generate seeds from clusters (no hard limit)
+        print("[Pipeline] Phase 2b: Generating seeds from clusters...")
+        seeds = await self._phase2b_seed_formation(clusters, sections)
+        print(f"[Pipeline] Phase 2b complete: {len(seeds)} seeds formed")
 
         # Phase 3-4: Generate threads for each seed
         print("[Pipeline] Phase 3-4: Generating discussions...")
@@ -63,6 +73,7 @@ class PipelineService:
 
         return {
             "annotations": annotations_by_agent,
+            "clusters": clusters,
             "seeds": seeds,
             "threads": threads,
         }
@@ -117,13 +128,11 @@ class PipelineService:
             print(f"[Pipeline] Annotation error for {agent_id}: {e}")
             return []
 
-    async def _phase2_seed_formation(
-        self, annotations_by_agent: dict, sections: list[dict], target_count: int
+    async def _phase2b_seed_formation(
+        self, clusters: list[dict], sections: list[dict]
     ) -> list[dict]:
-        """Form discussion seeds from annotations."""
-        system_prompt, user_prompt = get_seed_formation_prompt(
-            annotations_by_agent, sections
-        )
+        """Generate seeds from pre-clustered annotations. No hard limit on seed count."""
+        system_prompt, user_prompt = get_seed_formation_prompt(clusters, sections)
 
         try:
             result = await llm_service.generate_json(
@@ -134,10 +143,10 @@ class PipelineService:
             seeds = result.get("seeds", [])
 
             # Add IDs to seeds
-            for i, seed in enumerate(seeds):
+            for seed in seeds:
                 seed["seedId"] = f"seed_{uuid.uuid4().hex[:8]}"
 
-            return seeds[:target_count]
+            return seeds
         except Exception as e:
             print(f"[Pipeline] Seed formation error: {e}")
             return []
