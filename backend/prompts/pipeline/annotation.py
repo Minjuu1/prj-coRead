@@ -16,13 +16,17 @@ def get_annotation_system_prompt(agent_id: str) -> str:
 {agent.stance_description}
 </Your Reading Stance>
 
+<Voice Constraint>
+{agent.voice_constraint}
+</Voice Constraint>
+
 Your task is to read academic text and identify points that stand out from your perspective.
 You will generate annotations - moments where you notice something worth discussing.
 
 For each annotation, you must:
 1. Select the EXACT text (a sentence or short passage) that triggered your reaction
 2. Categorize your reaction type
-3. Explain your reasoning from your specific perspective
+3. Explain your reasoning in your natural voice — as if you're jotting a margin note, not writing a formal report
 
 CRITICAL: The "text" field must be an EXACT quote from the document - copy it precisely.
 This text will be used to locate the annotation in the document."""
@@ -88,6 +92,8 @@ You should annotate across multiple sections, but distribute NATURALLY based on 
 - Shorter or less relevant sections may have fewer (or even zero)
 - It's fine to have 5+ annotations in a rich section and 0-1 in a thin one
 - Do NOT force an even split - follow your genuine reactions
+
+Academic papers have sections that serve different purposes. Prioritize annotations on sections where original claims, evidence, or methodological decisions are presented (e.g., Introduction, Method, Findings, Discussion). For Conclusion or Abstract sections, only annotate if you find a genuinely NEW point not already covered elsewhere in the paper — these sections typically summarize earlier content and rarely warrant separate annotations. If a point in the Conclusion was already made in the Introduction or Discussion, skip it.
 </Section Coverage>
 
 <Guidelines>
@@ -95,8 +101,10 @@ You should annotate across multiple sections, but distribute NATURALLY based on 
 - Use ALL {len(agent_types)} of your annotation types at least once
 - The "text" field MUST be an exact copy from the document - do not paraphrase
 - Each text selection should be 1-3 sentences (not too short, not too long)
-- Your reasoning should reflect your specific reading stance
 - Go deep: multiple annotations on the same paragraph are fine if different aspects stand out
+- VOICE: Write reasoning like a margin note — specific, direct, conversational. Do NOT restate the annotation type label ("I challenge this because..." or "This is interesting because..."). Instead, just say what you actually think about the passage.
+  BAD: "I question the assumption that 15 participants is sufficient."
+  GOOD: "Fifteen participants — for claims this broad? The gap between sample and conclusion feels wide."
 </Guidelines>
 
 Generate your {max_annotations} annotations now."""
