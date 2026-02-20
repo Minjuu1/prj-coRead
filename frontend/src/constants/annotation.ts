@@ -2,82 +2,52 @@
 // Each stance has its own vocabulary reflecting its relationship to text
 
 export const ANNOTATION_TYPES = {
-  // Instrumental - text as resource (extract, apply, organize)
-  extract: {
-    id: 'extract',
+  // Instrumental - text as resource (concepts, information)
+  note: {
+    id: 'note',
     stance: 'instrumental',
-    label: 'Extract',
-    description: 'Pulls out key concepts, definitions, or methods that can be reused or built upon',
+    label: 'Note',
+    description: 'Identifies key concepts, methods, or findings worth retaining — captures what\'s practically useful or important to understand',
   },
-  apply: {
-    id: 'apply',
+  stuck: {
+    id: 'stuck',
     stance: 'instrumental',
-    label: 'Apply',
-    description: 'Suggests how this idea could be applied in another context or project',
-  },
-  clarify: {
-    id: 'clarify',
-    stance: 'instrumental',
-    label: 'Clarify',
-    description: 'Adds interpretation to make unclear parts more understandable',
-  },
-  gap: {
-    id: 'gap',
-    stance: 'instrumental',
-    label: 'Gap',
-    description: 'Points out missing or insufficient information that blocks understanding',
+    label: 'Stuck',
+    description: 'Flags where understanding breaks down — missing information, unclear explanations, or insufficient detail that blocks comprehension or application',
   },
 
-  // Critical - text as argument (question, evaluate, deconstruct)
+  // Critical - text as argument (inferences, assumptions, point of view)
   question: {
     id: 'question',
     stance: 'critical',
     label: 'Question',
-    description: 'Raises questions about the evidence or logical connections',
+    description: 'Probes the evidence, logic, or methodology — challenges whether conclusions follow from the data presented',
   },
-  challenge: {
-    id: 'challenge',
+  uncover: {
+    id: 'uncover',
     stance: 'critical',
-    label: 'Challenge',
-    description: 'Points out weaknesses, overgeneralizations, or logical leaps in the argument',
+    label: 'Uncover',
+    description: 'Surfaces unstated premises, hidden biases, or ideological framings that shape the argument without being made explicit',
   },
-  counter: {
-    id: 'counter',
+  alternative: {
+    id: 'alternative',
     stance: 'critical',
-    label: 'Counter',
-    description: 'Offers alternative explanations or counterexamples the author didn\'t consider',
-  },
-  assumption: {
-    id: 'assumption',
-    stance: 'critical',
-    label: 'Assumption',
-    description: 'Reveals unstated premises or ideological biases underlying the argument',
+    label: 'Alternative',
+    description: 'Offers a different interpretation, counterexample, or point of view the author doesn\'t consider',
   },
 
-  // Aesthetic - text as encounter (resonate, connect, imagine)
-  resonate: {
-    id: 'resonate',
+  // Aesthetic - text as encounter (personal response, implications)
+  struck: {
+    id: 'struck',
     stance: 'aesthetic',
-    label: 'Resonate',
-    description: 'Responds to parts that personally resonate or evoke emotional reaction',
+    label: 'Struck',
+    description: 'Responds to what personally resonates, surprises, or moves — evoking memories, emotions, or a shift in perspective',
   },
-  remind: {
-    id: 'remind',
+  implication: {
+    id: 'implication',
     stance: 'aesthetic',
-    label: 'Remind',
-    description: 'Shares associations with personal experiences, other texts, or real-world cases',
-  },
-  surprise: {
-    id: 'surprise',
-    stance: 'aesthetic',
-    label: 'Surprise',
-    description: 'Reacts to parts that broke expectations or opened new perspectives',
-  },
-  imagine: {
-    id: 'imagine',
-    stance: 'aesthetic',
-    label: 'Imagine',
-    description: 'Extends the idea or imagines possibilities in different contexts',
+    label: 'Implication',
+    description: 'Explores where the idea leads — its consequences, possibilities, or connections to other contexts and experiences',
   },
 } as const;
 
@@ -86,9 +56,9 @@ export type AgentId = 'instrumental' | 'critical' | 'aesthetic';
 
 // Pre-computed mapping for efficient agent-specific lookup
 export const ANNOTATION_TYPES_BY_AGENT = {
-  instrumental: ['extract', 'apply', 'clarify', 'gap'],
-  critical: ['question', 'challenge', 'counter', 'assumption'],
-  aesthetic: ['resonate', 'remind', 'surprise', 'imagine'],
+  instrumental: ['note', 'stuck'],
+  critical: ['question', 'uncover', 'alternative'],
+  aesthetic: ['struck', 'implication'],
 } as const;
 
 export function getAnnotationTypesForAgent(agentId: AgentId): AnnotationType[] {

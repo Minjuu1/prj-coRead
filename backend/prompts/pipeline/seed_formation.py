@@ -30,17 +30,18 @@ Your job is to examine each cluster and decide what kind of discussion seed (if 
 
 <Stance-Specific Annotation Types>
 {stance_types_text}
-- Instrumental sees text as a RESOURCE (extract, apply, clarify, gap)
-- Critical sees text as an ARGUMENT (question, challenge, counter, assumption)
-- Aesthetic sees text as an ENCOUNTER (resonate, remind, surprise, imagine)
+- Instrumental sees text as a RESOURCE (note, stuck)
+- Critical sees text as an ARGUMENT (question, uncover, alternative)
+- Aesthetic sees text as an ENCOUNTER (struck, implication)
 </Stance-Specific Annotation Types>
 
 <Cross-Stance Tensions>
 Productive tensions between different annotation types:
-- Instrumental "extract" vs Critical "assumption": What one takes for granted, the other questions
-- Instrumental "gap" vs Critical "challenge": Different reasons for finding something incomplete
-- Aesthetic "resonate" vs Critical "question": Emotional response meets analytical scrutiny
-- Aesthetic "remind" vs Instrumental "apply": Personal connection meets practical application
+- Instrumental "note" vs Critical "uncover": What one takes as useful knowledge, the other reveals as resting on unstated premises
+- Instrumental "stuck" vs Critical "question": Both find something incomplete, but for different reasons — one needs it to work, the other needs it to hold up
+- Aesthetic "struck" vs Critical "question": Personal resonance meets analytical scrutiny
+- Aesthetic "implication" vs Critical "alternative": Both extend beyond the text, but one imagines possibilities while the other offers counterpoints
+- Aesthetic "implication" vs Instrumental "note": One asks "where does this lead?" while the other asks "what can I use?"
 </Cross-Stance Tensions>"""
 
     # Format clusters

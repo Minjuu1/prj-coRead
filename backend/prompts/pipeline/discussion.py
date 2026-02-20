@@ -71,7 +71,7 @@ Each agent MUST use only their stance-specific annotation types:
 
 <Cross-Reference Guideline>
 When responding to another agent's annotation, reinterpret it through your own stance.
-For example, if Critical responds to Aesthetic's "resonate", Critical might frame their response as a "question" or "challenge" about the emotional reaction's implications.
+For example, if Critical responds to Aesthetic's "struck", Critical might frame their response as a "question" about what that emotional reaction reveals or obscures.
 </Cross-Reference Guideline>
 
 <Guidelines>
