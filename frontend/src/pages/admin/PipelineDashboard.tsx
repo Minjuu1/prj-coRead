@@ -5,6 +5,19 @@
 import { useState, useRef } from 'react';
 import { Play, RefreshCw, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Upload, FileText, Download } from 'lucide-react';
 import { AGENTS } from '../../constants/agents';
+import { ANNOTATION_TYPES } from '../../constants/annotation';
+
+// Annotation type → agent color mapping
+const getAnnotationTypeColor = (type: string) => {
+  const config = ANNOTATION_TYPES[type as keyof typeof ANNOTATION_TYPES];
+  if (!config) return { bg: 'bg-gray-100', text: 'text-gray-600' };
+  switch (config.stance) {
+    case 'instrumental': return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' };
+    case 'critical': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
+    case 'aesthetic': return { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' };
+    default: return { bg: 'bg-gray-100', text: 'text-gray-600', border: 'border-gray-200' };
+  }
+};
 
 // Pipeline step status
 type StepStatus = 'pending' | 'running' | 'complete' | 'error';
@@ -51,6 +64,16 @@ interface ThreadResult {
   messages?: Message[];
 }
 
+interface Cluster {
+  clusterId: string;
+  sectionTitle: string;
+  annotations: { agentId: string; type: string; text: string; reasoning: string }[];
+  agents: string[];
+  overlapType: string;
+  annotationCount: number;
+  agentCount: number;
+}
+
 interface PhaseData {
   duration?: number;
 }
@@ -69,6 +92,7 @@ interface PipelineState {
   currentPhase: number;
   phases: PipelinePhase[];
   annotations: Record<string, Annotation[]>;
+  clusters: Cluster[];
   seeds: Seed[];
   threads: ThreadResult[];
 }
@@ -100,16 +124,19 @@ export function PipelineDashboard() {
     currentPhase: 0,
     phases: [
       { name: 'Phase 1: Agent Annotations', status: 'pending' },
-      { name: 'Phase 2: Seed Formation', status: 'pending' },
+      { name: 'Phase 2a: Clustering', status: 'pending' },
+      { name: 'Phase 2b: Seed Formation', status: 'pending' },
       { name: 'Phase 3-4: Thread Generation', status: 'pending' },
     ],
     annotations: {},
+    clusters: [],
     seeds: [],
     threads: [],
   });
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     annotations: true,
+    clusters: true,
     seeds: true,
     threads: true,
   });
@@ -181,10 +208,12 @@ export function PipelineDashboard() {
       currentPhase: 1,
       phases: [
         { name: 'Phase 1: Agent Annotations', status: 'running', startTime },
-        { name: 'Phase 2: Seed Formation', status: 'pending' },
+        { name: 'Phase 2a: Clustering', status: 'pending' },
+        { name: 'Phase 2b: Seed Formation', status: 'pending' },
         { name: 'Phase 3-4: Thread Generation', status: 'pending' },
       ],
       annotations: {},
+      clusters: [],
       seeds: [],
       threads: [],
     });
@@ -231,7 +260,7 @@ export function PipelineDashboard() {
 
       setPipeline({
         status: 'complete',
-        currentPhase: 3,
+        currentPhase: 4,
         phases: [
           {
             name: 'Phase 1: Agent Annotations',
@@ -241,11 +270,18 @@ export function PipelineDashboard() {
             data: { duration: timings.phase1 },
           },
           {
-            name: 'Phase 2: Seed Formation',
+            name: 'Phase 2a: Clustering',
             status: 'complete',
             startTime,
             endTime,
-            data: { duration: timings.phase2 },
+            data: { duration: timings.phase2a },
+          },
+          {
+            name: 'Phase 2b: Seed Formation',
+            status: 'complete',
+            startTime,
+            endTime,
+            data: { duration: timings.phase2b },
           },
           {
             name: 'Phase 3-4: Thread Generation',
@@ -256,6 +292,7 @@ export function PipelineDashboard() {
           },
         ],
         annotations: data.annotations || {},
+        clusters: data.clusters || [],
         seeds: data.seeds || [],
         threads: data.threads || [],
       });
@@ -304,6 +341,7 @@ export function PipelineDashboard() {
               <button
                 onClick={() => downloadJson({
                   annotations: pipeline.annotations,
+                  clusters: pipeline.clusters,
                   seeds: pipeline.seeds,
                   threads: pipeline.threads,
                   exportedAt: new Date().toISOString(),
@@ -503,7 +541,7 @@ export function PipelineDashboard() {
                     {(expandedAgents[agentId] ? annotations : annotations.slice(0, 3)).map((ann, i) => (
                       <div key={i} className="text-sm p-2 bg-gray-50 rounded border border-gray-100">
                         <div className="flex items-center gap-2 mb-1">
-                          <span className="px-2 py-0.5 bg-gray-200 rounded text-xs font-medium">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${getAnnotationTypeColor(ann.type).bg} ${getAnnotationTypeColor(ann.type).text}`}>
                             {ann.type}
                           </span>
                           <span className="text-gray-500">{ann.sectionTitle}</span>
@@ -529,7 +567,85 @@ export function PipelineDashboard() {
           )}
         </div>
 
-        {/* Phase 2: Seeds */}
+        {/* Phase 2a: Clusters */}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="flex items-center p-4">
+            <button
+              onClick={() => toggleSection('clusters')}
+              className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
+            >
+              {expandedSections.clusters ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+              <span className="font-medium text-gray-900">Phase 2a: Annotation Clusters</span>
+            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-500">
+                {pipeline.clusters.length} clusters
+                {pipeline.clusters.length > 0 && (
+                  <span className="ml-1">
+                    ({pipeline.clusters.filter(c => c.agentCount >= 2).length} multi-agent)
+                  </span>
+                )}
+              </span>
+              {pipeline.clusters.length > 0 && (
+                <button
+                  onClick={() => downloadJson(pipeline.clusters, `clusters-${Date.now()}.json`)}
+                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+                  title="Download clusters"
+                >
+                  <Download size={16} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {expandedSections.clusters && pipeline.clusters.length > 0 && (
+            <div className="border-t border-gray-200 p-4 space-y-3">
+              {pipeline.clusters.map((cluster) => (
+                <div key={cluster.clusterId} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      cluster.agentCount >= 2
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}>
+                      {cluster.overlapType}
+                    </span>
+                    <span className="text-sm text-gray-500">{cluster.sectionTitle}</span>
+                    <div className="flex gap-1 ml-auto">
+                      {cluster.agents.map((agentId) => (
+                        <div
+                          key={agentId}
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: getAgentColor(agentId) }}
+                          title={agentId}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-gray-400">{cluster.annotationCount} ann.</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {cluster.annotations.map((ann, i) => (
+                      <div key={i} className="flex gap-2 text-sm">
+                        <div
+                          className="w-2 h-2 rounded-full shrink-0 mt-1.5"
+                          style={{ backgroundColor: getAgentColor(ann.agentId) }}
+                        />
+                        <div className="min-w-0">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-xs mr-1 ${getAnnotationTypeColor(ann.type).bg} ${getAnnotationTypeColor(ann.type).text}`}>
+                            {ann.type}
+                          </span>
+                          <span className="text-gray-600 italic">"{ann.text?.slice(0, 120)}..."</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Phase 2b: Seeds */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="flex items-center p-4">
             <button
@@ -537,7 +653,7 @@ export function PipelineDashboard() {
               className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
             >
               {expandedSections.seeds ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-              <span className="font-medium text-gray-900">Phase 2: Discussion Seeds</span>
+              <span className="font-medium text-gray-900">Phase 2b: Discussion Seeds</span>
             </button>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">{pipeline.seeds.length} seeds</span>
@@ -657,7 +773,7 @@ export function PipelineDashboard() {
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-xs font-medium text-gray-500 capitalize">{msg.author}</p>
                               {msg.annotationType && (
-                                <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">
+                                <span className={`px-1.5 py-0.5 rounded text-xs ${getAnnotationTypeColor(msg.annotationType).bg} ${getAnnotationTypeColor(msg.annotationType).text}`}>
                                   {msg.annotationType}
                                 </span>
                               )}

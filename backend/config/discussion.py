@@ -37,50 +37,72 @@ THREAD_CONFIG = {
     "max_turns": 20,
 }
 
-# Annotation types with descriptions
+# Annotation types with descriptions - stance-specific
+# Each stance has its own vocabulary that reflects its relationship to the text
 @dataclass(frozen=True)
 class AnnotationTypeConfig:
     id: str
+    stance: str  # "instrumental" | "critical" | "aesthetic"
     label: str
     description: str
 
 ANNOTATION_TYPES: Dict[str, AnnotationTypeConfig] = {
-    "confusing": AnnotationTypeConfig(
-        id="confusing",
-        label="Confusing",
-        description="Something unclear, ambiguous, or hard to understand",
+    # Instrumental - text as resource (concepts, information)
+    "note": AnnotationTypeConfig(
+        id="note", stance="instrumental", label="Note",
+        description="Identifies key concepts, methods, or findings worth retaining — captures what's practically useful or important to understand",
     ),
-    "challenge": AnnotationTypeConfig(
-        id="challenge",
-        label="Challenge",
-        description="Something you disagree with, question, or want to correct",
+    "stuck": AnnotationTypeConfig(
+        id="stuck", stance="instrumental", label="Stuck",
+        description="Flags where understanding breaks down — missing information, unclear explanations, or insufficient detail that blocks comprehension or application",
     ),
-    "highlight": AnnotationTypeConfig(
-        id="highlight",
-        label="Highlight",
-        description="A noteworthy point that deserves attention",
+
+    # Critical - text as argument (inferences, assumptions, point of view)
+    "question": AnnotationTypeConfig(
+        id="question", stance="critical", label="Question",
+        description="Probes the evidence, logic, or methodology — challenges whether conclusions follow from the data presented",
     ),
-    "connect": AnnotationTypeConfig(
-        id="connect",
-        label="Connect",
-        description="Linking to another concept, experience, or external idea",
+    "uncover": AnnotationTypeConfig(
+        id="uncover", stance="critical", label="Uncover",
+        description="Surfaces unstated premises, hidden biases, or ideological framings that shape the argument without being made explicit",
     ),
-    "probe": AnnotationTypeConfig(
-        id="probe",
-        label="Probe",
-        description="Digging deeper into the issue or asking follow-up questions",
+    "alternative": AnnotationTypeConfig(
+        id="alternative", stance="critical", label="Alternative",
+        description="Offers a different interpretation, counterexample, or point of view the author doesn't consider",
     ),
-    "summarize": AnnotationTypeConfig(
-        id="summarize",
-        label="Summarize",
-        description="Synthesizing or summarizing the key points",
+
+    # Aesthetic - text as encounter (personal response, implications)
+    "struck": AnnotationTypeConfig(
+        id="struck", stance="aesthetic", label="Struck",
+        description="Responds to what personally resonates, surprises, or moves — evoking memories, emotions, or a shift in perspective",
+    ),
+    "implication": AnnotationTypeConfig(
+        id="implication", stance="aesthetic", label="Implication",
+        description="Explores where the idea leads — its consequences, possibilities, or connections to other contexts and experiences",
     ),
 }
+
+# Pre-computed mapping for efficient agent-specific lookup
+ANNOTATION_TYPES_BY_AGENT: Dict[str, Dict[str, AnnotationTypeConfig]] = {
+    agent_id: {k: v for k, v in ANNOTATION_TYPES.items() if v.stance == agent_id}
+    for agent_id in ["instrumental", "critical", "aesthetic"]
+}
+
+def get_annotation_types_for_agent(agent_id: str) -> Dict[str, AnnotationTypeConfig]:
+    """Returns annotation types available for a specific agent/stance."""
+    return ANNOTATION_TYPES_BY_AGENT.get(agent_id, {})
+
+def get_all_annotation_type_ids() -> List[str]:
+    """Returns all annotation type IDs."""
+    return list(ANNOTATION_TYPES.keys())
 
 # Annotation configuration
 ANNOTATION_CONFIG = {
     "max_per_agent": 20,
-    "types": list(ANNOTATION_TYPES.keys()),  # derived from ANNOTATION_TYPES
+    "types_per_agent": {
+        agent_id: list(types.keys())
+        for agent_id, types in ANNOTATION_TYPES_BY_AGENT.items()
+    },
 }
 
 # Seed configuration

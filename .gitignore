@@ -38,4 +38,7 @@ coverage/
 
 # Misc
 *.bak
-claude.md
+
+# Documentation (local only)
+CLAUDE.md
+docs/implementation-log.md

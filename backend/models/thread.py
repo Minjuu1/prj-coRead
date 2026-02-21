@@ -6,7 +6,15 @@ from datetime import datetime
 AgentId = Literal['instrumental', 'critical', 'aesthetic']
 ThreadType = Literal['comment', 'discussion']
 DiscussionType = Literal['position_taking', 'deepening', 'connecting']
-AnnotationType = Literal['confusing', 'challenge', 'highlight', 'connect', 'probe', 'summarize']
+# Stance-specific annotation types (2-3 per stance, 7 total):
+# - Instrumental: note, stuck
+# - Critical: question, uncover, alternative
+# - Aesthetic: struck, implication
+AnnotationType = Literal[
+    'note', 'stuck',
+    'question', 'uncover', 'alternative',
+    'struck', 'implication',
+]
 
 # TODO: Enable when implementing memory-based discussions
 # AgentActionType = Literal['speak', 'search', 'reference', 'recall']
