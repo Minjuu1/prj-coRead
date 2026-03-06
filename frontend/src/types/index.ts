@@ -1,7 +1,5 @@
 import type { AgentId } from '../constants/agents';
-import type { DiscussionType } from '../constants/discussion';
 import type { AnnotationType } from '../constants/annotation';
-// import type { AgentActionType } from '../constants/actions';  // TODO: Enable for memory-based discussions
 
 // User
 export interface User {
@@ -49,14 +47,6 @@ export interface MessageReference {
   text: string;
 }
 
-// TODO: Enable for memory-based discussions
-// export interface AgentAction {
-//   type: AgentActionType;
-//   query?: string; // for search action
-//   annotationId?: string; // for recall action
-//   sectionId?: string; // for reference action
-// }
-
 // Message
 export interface Message {
   messageId: string;
@@ -65,8 +55,8 @@ export interface Message {
   content: string;
   references: MessageReference[];
   taggedAgent?: AgentId;
-  // action?: AgentAction;  // TODO: Enable for memory-based discussions
   annotationType?: AnnotationType;
+  referencedAnnotationIds?: string[];
   timestamp: string;
 }
 
@@ -74,10 +64,9 @@ export interface Message {
 export interface Thread {
   threadId: string;
   documentId: string;
-  seedId: string;
+  sourceReactionId: string;
+  sourceAnnotationIds: string[];
   threadType: 'comment' | 'discussion';
-  discussionType?: DiscussionType;
-  tensionPoint: string;
   keywords: string[];
   anchor: Anchor;
   participants: AgentId[];
@@ -86,34 +75,35 @@ export interface Thread {
   updatedAt: string;
 }
 
-// Annotation
-export interface Annotation {
+// Visible Annotation (anchored to text, visible to users)
+export interface VisibleAnnotation {
   annotationId: string;
-  agentId: AgentId;
   documentId: string;
-  type: AnnotationType;
-  target: {
-    mode: 'text' | 'section';
-    text?: string;
-    sectionId: string;
-    startOffset?: number;
-    endOffset?: number;
-  };
-  relatedSections?: string[];
+  agentId: AgentId;
+  annotationType: AnnotationType;
+  sectionId: string;
+  sectionTitle: string;
+  startOffset: number;
+  endOffset: number;
+  snippetText: string;
   reasoning: string;
   createdAt: string;
 }
 
-// Discussion Seed
-export interface DiscussionSeed {
-  seedId: string;
+// Cross-Reading Reaction
+export interface CrossReadingReaction {
+  reactionId: string;
   documentId: string;
-  tensionPoint: string;
-  discussionType: DiscussionType;
-  keywords: string[];
-  sourceAnnotationIds: string[];
-  overlapLevel: 'exact' | 'paragraph' | 'section' | 'thematic';
-  anchor: Anchor;
+  reactingAgentId: AgentId;
+  targetAnnotationId: string;
+  targetAgentId: AgentId;
+  targetAnnotationType: AnnotationType;
+  reactionText: string;
+  reactionAnnotationType: AnnotationType;
+  ownAnnotationIds: string[];
+  ownAnnotationTexts: string[];
+  isStrong: boolean;
+  sectionId: string;
   createdAt: string;
 }
 

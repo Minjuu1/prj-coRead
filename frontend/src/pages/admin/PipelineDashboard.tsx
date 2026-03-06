@@ -2,8 +2,8 @@
  * Pipeline Dashboard - Visualizes the discussion generation pipeline steps
  * Route: /admin/discussion-pipeline
  */
-import { useState, useRef } from 'react';
-import { Play, RefreshCw, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Upload, FileText, Download } from 'lucide-react';
+import { useState, useRef, useMemo } from 'react';
+import { Play, RefreshCw, ChevronDown, ChevronRight, CheckCircle, XCircle, Clock, AlertCircle, Upload, FileText, Download, ArrowRight, Link2 } from 'lucide-react';
 import { AGENTS } from '../../constants/agents';
 import { ANNOTATION_TYPES } from '../../constants/annotation';
 
@@ -19,59 +19,49 @@ const getAnnotationTypeColor = (type: string) => {
   }
 };
 
-// Pipeline step status
 type StepStatus = 'pending' | 'running' | 'complete' | 'error';
 
 interface Annotation {
+  annotationId?: string;
   type: string;
   text: string;
   sectionTitle: string;
   reasoning: string;
+  agentId?: string;
 }
 
-interface Seed {
-  seedId: string;
-  tensionPoint: string;
-  discussionType: string;
-  snippetText: string;
-  sectionTitle: string;
-  relevantAgents: string[];
-  keywords: string[];
+interface Reaction {
+  reactionId: string;
+  reactingAgentId: string;
+  targetAnnotationId: string;
+  targetAgentId: string;
+  targetAnnotationType: string;
+  reactionText: string;
+  reactionAnnotationType: string;
+  ownAnnotationIds: string[];
+  ownAnnotationTexts: string[];
+  sectionId: string;
 }
-
-// TODO: Enable for memory-based discussions
-// interface MessageAction {
-//   type: string;
-//   query?: string;
-//   sectionId?: string;
-//   annotationId?: string;
-// }
 
 interface Message {
   messageId: string;
   author: string;
   content: string;
-  // action?: MessageAction;  // TODO: Enable for memory-based discussions
   annotationType?: string;
 }
 
 interface ThreadResult {
   threadId: string;
   threadType: string;
-  tensionPoint: string;
+  sourceReactionId: string;
+  sourceAnnotationIds?: string[];
   participants: string[];
   messageCount: number;
   messages?: Message[];
-}
-
-interface Cluster {
-  clusterId: string;
-  sectionTitle: string;
-  annotations: { agentId: string; type: string; text: string; reasoning: string }[];
-  agents: string[];
-  overlapType: string;
-  annotationCount: number;
-  agentCount: number;
+  anchor?: {
+    snippetText: string;
+    sectionId: string;
+  };
 }
 
 interface PhaseData {
@@ -92,8 +82,8 @@ interface PipelineState {
   currentPhase: number;
   phases: PipelinePhase[];
   annotations: Record<string, Annotation[]>;
-  clusters: Cluster[];
-  seeds: Seed[];
+  reactions: Reaction[];
+  strongReactions: Reaction[];
   threads: ThreadResult[];
 }
 
@@ -105,7 +95,6 @@ interface DocumentInfo {
 
 const API_BASE = 'http://localhost:8000';
 
-// JSON 다운로드 유틸리티
 const downloadJson = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -123,35 +112,58 @@ export function PipelineDashboard() {
     status: 'idle',
     currentPhase: 0,
     phases: [
-      { name: 'Phase 1: Agent Annotations', status: 'pending' },
-      { name: 'Phase 2a: Clustering', status: 'pending' },
-      { name: 'Phase 2b: Seed Formation', status: 'pending' },
-      { name: 'Phase 3-4: Thread Generation', status: 'pending' },
+      { name: 'Phase 1: Reading (Annotations)', status: 'pending' },
+      { name: 'Phase 2: Cross-Reading (Reactions)', status: 'pending' },
+      { name: 'Phase 3: Discussion Generation', status: 'pending' },
     ],
     annotations: {},
-    clusters: [],
-    seeds: [],
+    reactions: [],
+    strongReactions: [],
     threads: [],
   });
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     annotations: true,
-    clusters: true,
-    seeds: true,
+    reactions: true,
+    filtering: true,
     threads: true,
   });
 
-  // Track which agents have expanded annotations
   const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
-
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Document state
   const [dataSource, setDataSource] = useState<'mock' | 'upload'>('mock');
   const [uploadedDocument, setUploadedDocument] = useState<DocumentInfo | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Build annotation lookup map: annotationId → Annotation
+  const annotationMap = useMemo(() => {
+    const map: Record<string, Annotation & { agentId: string }> = {};
+    for (const [agentId, annotations] of Object.entries(pipeline.annotations)) {
+      for (const ann of annotations) {
+        const id = ann.annotationId;
+        if (id) {
+          map[id] = { ...ann, agentId };
+        }
+      }
+    }
+    return map;
+  }, [pipeline.annotations]);
+
+  // Build strong reaction ID set for quick lookup
+  const strongReactionIds = useMemo(() => {
+    return new Set(pipeline.strongReactions.map(r => r.reactionId));
+  }, [pipeline.strongReactions]);
+
+  // Build reaction lookup: reactionId → Reaction
+  const reactionMap = useMemo(() => {
+    const map: Record<string, Reaction> = {};
+    for (const r of pipeline.reactions) {
+      map[r.reactionId] = r;
+    }
+    return map;
+  }, [pipeline.reactions]);
 
   const toggleSection = (section: string) => {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -202,19 +214,17 @@ export function PipelineDashboard() {
 
     const startTime = new Date().toISOString();
 
-    // Reset state
     setPipeline({
       status: 'running',
       currentPhase: 1,
       phases: [
-        { name: 'Phase 1: Agent Annotations', status: 'running', startTime },
-        { name: 'Phase 2a: Clustering', status: 'pending' },
-        { name: 'Phase 2b: Seed Formation', status: 'pending' },
-        { name: 'Phase 3-4: Thread Generation', status: 'pending' },
+        { name: 'Phase 1: Reading (Annotations)', status: 'running', startTime },
+        { name: 'Phase 2: Cross-Reading (Reactions)', status: 'pending' },
+        { name: 'Phase 3: Discussion Generation', status: 'pending' },
       ],
       annotations: {},
-      clusters: [],
-      seeds: [],
+      reactions: [],
+      strongReactions: [],
       threads: [],
     });
 
@@ -223,21 +233,18 @@ export function PipelineDashboard() {
       let options: RequestInit;
 
       if (dataSource === 'mock') {
-        // Use mock data endpoint
         endpoint = `${API_BASE}/api/pipeline/test-with-logging`;
         options = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
         };
       } else if (uploadedDocument) {
-        // Use real document endpoint
         endpoint = `${API_BASE}/api/pipeline/documents/${uploadedDocument.documentId}/generate-with-logging`;
         options = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            maxAnnotationsPerAgent: 8,
-            targetSeeds: 4,
+            annotationsPerAgent: 7,
             turnsPerDiscussion: 3,
           }),
         };
@@ -254,46 +261,38 @@ export function PipelineDashboard() {
 
       const data = await response.json();
 
-      // Update state with full response
       const endTime = new Date().toISOString();
       const timings = data.timings || {};
 
       setPipeline({
         status: 'complete',
-        currentPhase: 4,
+        currentPhase: 3,
         phases: [
           {
-            name: 'Phase 1: Agent Annotations',
+            name: 'Phase 1: Reading (Annotations)',
             status: 'complete',
             startTime,
             endTime,
-            data: { duration: timings.phase1 },
+            data: { duration: timings.phase1_reading },
           },
           {
-            name: 'Phase 2a: Clustering',
+            name: 'Phase 2: Cross-Reading (Reactions)',
             status: 'complete',
             startTime,
             endTime,
-            data: { duration: timings.phase2a },
+            data: { duration: timings.phase2_cross_reading },
           },
           {
-            name: 'Phase 2b: Seed Formation',
+            name: 'Phase 3: Discussion Generation',
             status: 'complete',
             startTime,
             endTime,
-            data: { duration: timings.phase2b },
-          },
-          {
-            name: 'Phase 3-4: Thread Generation',
-            status: 'complete',
-            startTime,
-            endTime,
-            data: { duration: timings.phase3_4 },
+            data: { duration: timings.phase3_discussion },
           },
         ],
         annotations: data.annotations || {},
-        clusters: data.clusters || [],
-        seeds: data.seeds || [],
+        reactions: data.reactions || [],
+        strongReactions: data.strongReactions || [],
         threads: data.threads || [],
       });
     } catch (err) {
@@ -327,6 +326,33 @@ export function PipelineDashboard() {
     return AGENTS[agentId as keyof typeof AGENTS]?.color || '#6B7280';
   };
 
+  const getAgentName = (agentId: string) => {
+    return AGENTS[agentId as keyof typeof AGENTS]?.name || agentId;
+  };
+
+  // Render an inline annotation reference (resolved to text)
+  const renderAnnotationRef = (annId: string) => {
+    const ann = annotationMap[annId];
+    if (!ann) return <span className="text-xs text-gray-400">[{annId}]</span>;
+    return (
+      <div className="mt-1 p-2 bg-white rounded border border-gray-200 text-xs">
+        <div className="flex items-center gap-1.5 mb-1">
+          <div
+            className="w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: getAgentColor(ann.agentId) }}
+          />
+          <span className="font-medium capitalize">{ann.agentId}</span>
+          <span className={`px-1.5 py-0.5 rounded font-medium ${getAnnotationTypeColor(ann.type).bg} ${getAnnotationTypeColor(ann.type).text}`}>
+            {ann.type}
+          </span>
+          <span className="text-gray-400">{ann.sectionTitle}</span>
+        </div>
+        <p className="text-gray-700 italic">"{ann.text?.slice(0, 200)}"</p>
+        <p className="text-gray-500 mt-0.5">{ann.reasoning?.slice(0, 150)}</p>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -341,8 +367,8 @@ export function PipelineDashboard() {
               <button
                 onClick={() => downloadJson({
                   annotations: pipeline.annotations,
-                  clusters: pipeline.clusters,
-                  seeds: pipeline.seeds,
+                  reactions: pipeline.reactions,
+                  strongReactions: pipeline.strongReactions,
                   threads: pipeline.threads,
                   exportedAt: new Date().toISOString(),
                 }, `pipeline-results-${Date.now()}.json`)}
@@ -414,7 +440,6 @@ export function PipelineDashboard() {
             </button>
           </div>
 
-          {/* Upload Area */}
           {dataSource === 'upload' && (
             <div className="border-t border-gray-200 pt-4 mt-4">
               {uploadedDocument ? (
@@ -499,7 +524,7 @@ export function PipelineDashboard() {
           </div>
         </div>
 
-        {/* Phase 1: Annotations */}
+        {/* =============== Phase 1: Annotations =============== */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="flex items-center p-4">
             <button
@@ -507,7 +532,7 @@ export function PipelineDashboard() {
               className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
             >
               {expandedSections.annotations ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-              <span className="font-medium text-gray-900">Phase 1: Agent Annotations</span>
+              <span className="font-medium text-gray-900">Phase 1: Reading (Annotations)</span>
             </button>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">
@@ -539,14 +564,17 @@ export function PipelineDashboard() {
                   </div>
                   <div className="ml-5 space-y-2">
                     {(expandedAgents[agentId] ? annotations : annotations.slice(0, 3)).map((ann, i) => (
-                      <div key={i} className="text-sm p-2 bg-gray-50 rounded border border-gray-100">
+                      <div key={ann.annotationId || i} className="text-sm p-2 bg-gray-50 rounded border border-gray-100">
                         <div className="flex items-center gap-2 mb-1">
+                          {ann.annotationId && (
+                            <span className="text-xs text-gray-400 font-mono">{ann.annotationId}</span>
+                          )}
                           <span className={`px-2 py-0.5 rounded text-xs font-medium ${getAnnotationTypeColor(ann.type).bg} ${getAnnotationTypeColor(ann.type).text}`}>
                             {ann.type}
                           </span>
                           <span className="text-gray-500">{ann.sectionTitle}</span>
                         </div>
-                        <p className="text-gray-700 italic">"{ann.text?.slice(0, 150)}..."</p>
+                        <p className="text-gray-700 italic">"{ann.text?.slice(0, 200)}"</p>
                         <p className="text-gray-600 mt-1">{ann.reasoning}</p>
                       </div>
                     ))}
@@ -567,30 +595,25 @@ export function PipelineDashboard() {
           )}
         </div>
 
-        {/* Phase 2a: Clusters */}
+        {/* =============== Phase 2: Cross-Reading Reactions =============== */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="flex items-center p-4">
             <button
-              onClick={() => toggleSection('clusters')}
+              onClick={() => toggleSection('reactions')}
               className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
             >
-              {expandedSections.clusters ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-              <span className="font-medium text-gray-900">Phase 2a: Annotation Clusters</span>
+              {expandedSections.reactions ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+              <span className="font-medium text-gray-900">Phase 2: Cross-Reading (Reactions)</span>
             </button>
             <div className="flex items-center gap-3">
               <span className="text-sm text-gray-500">
-                {pipeline.clusters.length} clusters
-                {pipeline.clusters.length > 0 && (
-                  <span className="ml-1">
-                    ({pipeline.clusters.filter(c => c.agentCount >= 2).length} multi-agent)
-                  </span>
-                )}
+                {pipeline.reactions.length} reactions
               </span>
-              {pipeline.clusters.length > 0 && (
+              {pipeline.reactions.length > 0 && (
                 <button
-                  onClick={() => downloadJson(pipeline.clusters, `clusters-${Date.now()}.json`)}
+                  onClick={() => downloadJson(pipeline.reactions, `reactions-${Date.now()}.json`)}
                   className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
-                  title="Download clusters"
+                  title="Download reactions"
                 >
                   <Download size={16} />
                 </button>
@@ -598,113 +621,127 @@ export function PipelineDashboard() {
             </div>
           </div>
 
-          {expandedSections.clusters && pipeline.clusters.length > 0 && (
-            <div className="border-t border-gray-200 p-4 space-y-3">
-              {pipeline.clusters.map((cluster) => (
-                <div key={cluster.clusterId} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+          {expandedSections.reactions && pipeline.reactions.length > 0 && (
+            <div className="border-t border-gray-200 p-4 space-y-4">
+              {pipeline.reactions.map((reaction) => (
+                <div
+                  key={reaction.reactionId}
+                  className="p-3 rounded-lg border bg-gray-50 border-gray-200"
+                >
+                  {/* Header: who reacted to whom */}
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      cluster.agentCount >= 2
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-200 text-gray-600'
-                    }`}>
-                      {cluster.overlapType}
+                    <div
+                      className="w-4 h-4 rounded-full"
+                      style={{ backgroundColor: getAgentColor(reaction.reactingAgentId) }}
+                    />
+                    <span className="text-sm font-medium">{getAgentName(reaction.reactingAgentId)}</span>
+                    <ArrowRight size={12} className="text-gray-400" />
+                    <div
+                      className="w-4 h-4 rounded-full"
+                      style={{ backgroundColor: getAgentColor(reaction.targetAgentId) }}
+                    />
+                    <span className="text-sm font-medium">{getAgentName(reaction.targetAgentId)}</span>
+                    <span className={`ml-auto px-2 py-0.5 rounded text-xs font-medium ${getAnnotationTypeColor(reaction.reactionAnnotationType).bg} ${getAnnotationTypeColor(reaction.reactionAnnotationType).text}`}>
+                      {reaction.reactionAnnotationType}
                     </span>
-                    <span className="text-sm text-gray-500">{cluster.sectionTitle}</span>
-                    <div className="flex gap-1 ml-auto">
-                      {cluster.agents.map((agentId) => (
-                        <div
-                          key={agentId}
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: getAgentColor(agentId) }}
-                          title={agentId}
-                        />
+                    <span className="text-xs text-gray-400 font-mono">{reaction.reactionId}</span>
+                  </div>
+
+                  {/* Target annotation (resolved) */}
+                  <div className="mb-2">
+                    <p className="text-xs text-gray-500 mb-1">Reacting to:</p>
+                    {renderAnnotationRef(reaction.targetAnnotationId)}
+                  </div>
+
+                  {/* Reaction text */}
+                  <div className="p-2 bg-white rounded border border-gray-200 mb-2">
+                    <p className="text-sm text-gray-800">{reaction.reactionText}</p>
+                  </div>
+
+                  {/* Own annotation references (resolved) */}
+                  {reaction.ownAnnotationIds.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">
+                        Grounded in {reaction.ownAnnotationIds.length} own annotation(s):
+                      </p>
+                      {reaction.ownAnnotationIds.map(id => (
+                        <div key={id}>{renderAnnotationRef(id)}</div>
                       ))}
                     </div>
-                    <span className="text-xs text-gray-400">{cluster.annotationCount} ann.</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* =============== Filtering (Phase 2 → 3) =============== */}
+        {pipeline.status === 'complete' && pipeline.reactions.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="flex items-center p-4">
+              <button
+                onClick={() => toggleSection('filtering')}
+                className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
+              >
+                {expandedSections.filtering ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                <span className="font-medium text-gray-900">Filtering (Phase 2 → 3)</span>
+              </button>
+              <span className="text-sm text-gray-500">
+                {pipeline.reactions.length} reactions → {pipeline.strongReactions.length} strong → {pipeline.threads.length} threads
+              </span>
+            </div>
+
+            {expandedSections.filtering && (
+              <div className="border-t border-gray-200 p-4">
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="text-center p-3 bg-gray-50 rounded-lg">
+                    <p className="text-2xl font-semibold text-gray-900">{pipeline.reactions.length}</p>
+                    <p className="text-xs text-gray-500">Total Reactions</p>
                   </div>
-                  <div className="space-y-1.5">
-                    {cluster.annotations.map((ann, i) => (
-                      <div key={i} className="flex gap-2 text-sm">
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <p className="text-2xl font-semibold text-green-700">{pipeline.strongReactions.length}</p>
+                    <p className="text-xs text-gray-500">Strong (has own refs + 50+ chars + not just agreeing)</p>
+                  </div>
+                  <div className="text-center p-3 bg-purple-50 rounded-lg">
+                    <p className="text-2xl font-semibold text-purple-700">{pipeline.threads.length}</p>
+                    <p className="text-xs text-gray-500">Discussion Starters (deduped by target annotation)</p>
+                  </div>
+                </div>
+
+                {/* Show which reactions became starters */}
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Strong Reactions → Threads</p>
+                <div className="space-y-2">
+                  {pipeline.strongReactions.map((reaction) => {
+                    const linkedThread = pipeline.threads.find(t => t.sourceReactionId === reaction.reactionId);
+                    return (
+                      <div key={reaction.reactionId} className="flex items-center gap-2 p-2 bg-gray-50 rounded text-sm">
                         <div
-                          className="w-2 h-2 rounded-full shrink-0 mt-1.5"
-                          style={{ backgroundColor: getAgentColor(ann.agentId) }}
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: getAgentColor(reaction.reactingAgentId) }}
                         />
-                        <div className="min-w-0">
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-xs mr-1 ${getAnnotationTypeColor(ann.type).bg} ${getAnnotationTypeColor(ann.type).text}`}>
-                            {ann.type}
+                        <span className="text-gray-700 truncate flex-1">
+                          {reaction.reactionText.slice(0, 100)}...
+                        </span>
+                        {linkedThread ? (
+                          <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium shrink-0">
+                            <Link2 size={10} />
+                            {linkedThread.threadId}
                           </span>
-                          <span className="text-gray-600 italic">"{ann.text?.slice(0, 120)}..."</span>
-                        </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 shrink-0">
+                            (deduped)
+                          </span>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Phase 2b: Seeds */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="flex items-center p-4">
-            <button
-              onClick={() => toggleSection('seeds')}
-              className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
-            >
-              {expandedSections.seeds ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-              <span className="font-medium text-gray-900">Phase 2b: Discussion Seeds</span>
-            </button>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">{pipeline.seeds.length} seeds</span>
-              {pipeline.seeds.length > 0 && (
-                <button
-                  onClick={() => downloadJson(pipeline.seeds, `seeds-${Date.now()}.json`)}
-                  className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
-                  title="Download seeds"
-                >
-                  <Download size={16} />
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
+        )}
 
-          {expandedSections.seeds && pipeline.seeds.length > 0 && (
-            <div className="border-t border-gray-200 p-4 space-y-3">
-              {pipeline.seeds.map((seed, i) => (
-                <div key={seed.seedId || i} className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                      {seed.discussionType}
-                    </span>
-                    <span className="text-gray-500 text-sm">{seed.sectionTitle}</span>
-                    <div className="flex gap-1 ml-auto">
-                      {seed.relevantAgents?.map((agentId) => (
-                        <div
-                          key={agentId}
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: getAgentColor(agentId) }}
-                          title={agentId}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <p className="font-medium text-gray-900">{seed.tensionPoint}</p>
-                  <p className="text-sm text-gray-600 italic mt-1">"{seed.snippetText?.slice(0, 150)}..."</p>
-                  <div className="flex gap-1 mt-2">
-                    {seed.keywords?.map((kw) => (
-                      <span key={kw} className="px-2 py-0.5 bg-gray-200 rounded text-xs text-gray-600">
-                        {kw}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Phase 3-4: Threads */}
+        {/* =============== Phase 3: Threads =============== */}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <div className="flex items-center p-4">
             <button
@@ -712,7 +749,7 @@ export function PipelineDashboard() {
               className="flex items-center gap-2 flex-1 text-left hover:bg-gray-50 -m-2 p-2 rounded"
             >
               {expandedSections.threads ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-              <span className="font-medium text-gray-900">Phase 3-4: Generated Threads</span>
+              <span className="font-medium text-gray-900">Phase 3: Generated Threads</span>
             </button>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">{pipeline.threads.length} threads</span>
@@ -730,62 +767,97 @@ export function PipelineDashboard() {
 
           {expandedSections.threads && pipeline.threads.length > 0 && (
             <div className="border-t border-gray-200 p-4 space-y-4">
-              {pipeline.threads.map((thread) => (
-                <div key={thread.threadId} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        thread.threadType === 'discussion'
-                          ? 'bg-purple-100 text-purple-700'
-                          : 'bg-gray-200 text-gray-700'
-                      }`}
-                    >
-                      {thread.threadType}
-                    </span>
-                    <div className="flex gap-1">
-                      {thread.participants?.map((agentId) => (
-                        <div
-                          key={agentId}
-                          className="w-4 h-4 rounded-full"
-                          style={{ backgroundColor: getAgentColor(agentId) }}
-                          title={agentId}
-                        />
-                      ))}
-                    </div>
-                    <span className="text-sm text-gray-500 ml-auto">{thread.messageCount} messages</span>
-                  </div>
-                  <p className="font-medium text-gray-900 mb-3">{thread.tensionPoint}</p>
-
-                  {/* Messages */}
-                  {thread.messages && thread.messages.length > 0 && (
-                    <div className="space-y-2 mt-3 pt-3 border-t border-gray-200">
-                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Messages</p>
-                      {thread.messages.map((msg, idx) => (
-                        <div
-                          key={msg.messageId || idx}
-                          className="flex gap-3 p-2 bg-white rounded border border-gray-100"
-                        >
+              {pipeline.threads.map((thread) => {
+                const sourceReaction = reactionMap[thread.sourceReactionId];
+                return (
+                  <div key={thread.threadId} className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          thread.threadType === 'discussion'
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'bg-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {thread.threadType}
+                      </span>
+                      <div className="flex gap-1">
+                        {thread.participants?.map((agentId) => (
                           <div
-                            className="w-2 h-2 rounded-full shrink-0 mt-2"
-                            style={{ backgroundColor: getAgentColor(msg.author) }}
+                            key={agentId}
+                            className="w-4 h-4 rounded-full"
+                            style={{ backgroundColor: getAgentColor(agentId) }}
+                            title={agentId}
                           />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="text-xs font-medium text-gray-500 capitalize">{msg.author}</p>
-                              {msg.annotationType && (
-                                <span className={`px-1.5 py-0.5 rounded text-xs ${getAnnotationTypeColor(msg.annotationType).bg} ${getAnnotationTypeColor(msg.annotationType).text}`}>
-                                  {msg.annotationType}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-700">{msg.content}</p>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <span className="text-sm text-gray-500 ml-auto">
+                        {thread.messages?.length || thread.messageCount} messages
+                      </span>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {/* Source reaction context */}
+                    {sourceReaction && (
+                      <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-xs font-medium text-blue-700 mb-1 flex items-center gap-1">
+                          <Link2 size={10} />
+                          Started from cross-reading reaction
+                        </p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: getAgentColor(sourceReaction.reactingAgentId) }}
+                          />
+                          <span className="text-xs font-medium">{getAgentName(sourceReaction.reactingAgentId)}</span>
+                          <ArrowRight size={10} className="text-blue-400" />
+                          <div
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: getAgentColor(sourceReaction.targetAgentId) }}
+                          />
+                          <span className="text-xs font-medium">{getAgentName(sourceReaction.targetAgentId)}</span>
+                        </div>
+                        <p className="text-xs text-blue-800">{sourceReaction.reactionText.slice(0, 200)}</p>
+                      </div>
+                    )}
+
+                    {/* Anchor snippet */}
+                    {thread.anchor?.snippetText && (
+                      <p className="text-sm text-gray-600 italic border-l-2 border-gray-300 pl-3 mb-3">
+                        "{thread.anchor.snippetText.slice(0, 200)}"
+                      </p>
+                    )}
+
+                    {/* Messages */}
+                    {thread.messages && thread.messages.length > 0 && (
+                      <div className="space-y-2 mt-3 pt-3 border-t border-gray-200">
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Messages</p>
+                        {thread.messages.map((msg, idx) => (
+                          <div
+                            key={msg.messageId || idx}
+                            className="flex gap-3 p-2 bg-white rounded border border-gray-100"
+                          >
+                            <div
+                              className="w-2 h-2 rounded-full shrink-0 mt-2"
+                              style={{ backgroundColor: getAgentColor(msg.author) }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-xs font-medium text-gray-500 capitalize">{msg.author}</p>
+                                {msg.annotationType && (
+                                  <span className={`px-1.5 py-0.5 rounded text-xs ${getAnnotationTypeColor(msg.annotationType).bg} ${getAnnotationTypeColor(msg.annotationType).text}`}>
+                                    {msg.annotationType}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-700">{msg.content}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

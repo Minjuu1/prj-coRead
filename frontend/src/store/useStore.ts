@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Document, Thread, Section } from '../types';
+import type { Document, Thread, Section, VisibleAnnotation, CrossReadingReaction } from '../types';
 import type { ThreadListItem } from '../services/api';
 
 interface User {
@@ -22,13 +22,19 @@ interface AppState {
   // Thread state
   threads: ThreadListItem[];
   setThreads: (threads: ThreadListItem[]) => void;
-  fullThreads: Thread[];  // Full thread data with messages
+  fullThreads: Thread[];
   setFullThreads: (threads: Thread[]) => void;
   addFullThread: (thread: Thread) => void;
   selectedThread: Thread | null;
   setSelectedThread: (thread: Thread | null) => void;
   selectedThreadId: string | null;
   setSelectedThreadId: (threadId: string | null) => void;
+
+  // Annotation & cross-reading state
+  annotations: VisibleAnnotation[];
+  setAnnotations: (annotations: VisibleAnnotation[]) => void;
+  reactions: CrossReadingReaction[];
+  setReactions: (reactions: CrossReadingReaction[]) => void;
 
   // UI state
   isLoading: boolean;
@@ -48,6 +54,8 @@ const initialState = {
   fullThreads: [] as Thread[],
   selectedThread: null,
   selectedThreadId: null,
+  annotations: [] as VisibleAnnotation[],
+  reactions: [] as CrossReadingReaction[],
   isLoading: false,
   error: null,
 };
@@ -68,6 +76,9 @@ export const useStore = create<AppState>((set) => ({
     })),
   setSelectedThread: (selectedThread) => set({ selectedThread }),
   setSelectedThreadId: (selectedThreadId) => set({ selectedThreadId }),
+
+  setAnnotations: (annotations) => set({ annotations }),
+  setReactions: (reactions) => set({ reactions }),
 
   setIsLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),

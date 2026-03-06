@@ -1,22 +1,33 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Send } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { ArrowLeft, Send, RotateCw } from 'lucide-react';
 import { AGENTS, type AgentId } from '../constants/agents';
-import { DISCUSSION_TYPES, type DiscussionType } from '../constants/discussion';
 import type { Thread, Message } from '../types';
 
 interface DiscussionDetailProps {
   thread: Thread;
   onBack: () => void;
   onSendMessage: (content: string, taggedAgent?: AgentId) => void;
+  onGenerateMore?: () => void;
+  isAgentThinking?: boolean;
+  isGeneratingMore?: boolean;
 }
 
 export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
   thread,
   onBack,
   onSendMessage,
+  onGenerateMore,
+  isAgentThinking = false,
+  isGeneratingMore = false,
 }) => {
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when messages change or when thinking
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [thread.messages, isAgentThinking, isGeneratingMore]);
 
   const handleSend = async () => {
     if (!messageInput.trim() || isSending) return;
@@ -43,7 +54,8 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     }
   };
 
-  const discussionType = thread.discussionType as DiscussionType | undefined;
+  const isDiscussion = thread.threadType === 'discussion';
+  const isLoading = isAgentThinking || isGeneratingMore;
 
   return (
     <div className="h-full flex flex-col">
@@ -58,22 +70,18 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
         </button>
 
         <div className="flex items-center gap-2 mb-2">
-          {discussionType && (
-            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-              {DISCUSSION_TYPES[discussionType]?.label || discussionType}
-            </span>
-          )}
           <span className="text-xs text-gray-500">
-            {thread.threadType === 'discussion' ? 'Discussion' : 'Comment'}
+            {isDiscussion ? 'Discussion' : 'Comment'}
           </span>
         </div>
 
-        <h2 className="text-base font-medium text-gray-900">
-          {thread.tensionPoint}
-        </h2>
+        {/* Anchor context */}
+        <p className="text-sm text-gray-700 italic border-l-2 border-gray-300 pl-3 mb-3">
+          "{thread.anchor.snippetText}"
+        </p>
 
         {/* Participants */}
-        <div className="flex items-center gap-2 mt-3">
+        <div className="flex items-center gap-2">
           <span className="text-xs text-gray-500">Participants:</span>
           {thread.participants.map((agentId) => (
             <AgentBadge key={agentId} agentId={agentId} />
@@ -87,7 +95,31 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
           {thread.messages.map((message) => (
             <MessageView key={message.messageId} message={message} />
           ))}
+
+          {/* Thinking indicator */}
+          {isAgentThinking && (
+            <ThinkingIndicator participants={thread.participants} />
+          )}
+          {isGeneratingMore && (
+            <ThinkingIndicator participants={thread.participants} label="Generating more turns" />
+          )}
+
+          <div ref={messagesEndRef} />
         </div>
+
+        {/* Generate More button */}
+        {isDiscussion && onGenerateMore && (
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={onGenerateMore}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-md hover:bg-white hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <RotateCw size={14} className={isGeneratingMore ? 'animate-spin' : ''} />
+              Generate More
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Message Input */}
@@ -100,11 +132,11 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
             placeholder="Type a message... (use @Instrumental, @Critical, or @Aesthetic to tag)"
             className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-md resize-none focus:outline-none focus:border-gray-400"
             rows={2}
-            disabled={isSending}
+            disabled={isSending || isLoading}
           />
           <button
             onClick={handleSend}
-            disabled={!messageInput.trim() || isSending}
+            disabled={!messageInput.trim() || isSending || isLoading}
             className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
             <Send size={16} />
@@ -114,6 +146,35 @@ export const DiscussionDetail: React.FC<DiscussionDetailProps> = ({
     </div>
   );
 };
+
+const ThinkingIndicator: React.FC<{ participants: string[]; label?: string }> = ({
+  participants,
+  label = 'Agents are thinking',
+}) => (
+  <div className="flex items-center gap-2 px-3 py-2">
+    <div className="flex -space-x-1">
+      {participants.map((agentId) => {
+        const agent = AGENTS[agentId as AgentId];
+        if (!agent) return null;
+        return (
+          <div
+            key={agentId}
+            className="w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[10px]"
+            style={{ backgroundColor: agent.colorLight }}
+          >
+            {agent.emoji}
+          </div>
+        );
+      })}
+    </div>
+    <span className="text-xs text-gray-400">{label}</span>
+    <span className="flex gap-0.5">
+      <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+      <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+      <span className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+    </span>
+  </div>
+);
 
 interface MessageViewProps {
   message: Message;

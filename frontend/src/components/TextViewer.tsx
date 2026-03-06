@@ -278,7 +278,7 @@ const ThreadButton: React.FC<ThreadButtonProps> = ({
         onClick={onClick}
         className={baseClasses}
         style={{ top }}
-        title={thread.tensionPoint}
+        title={thread.anchor.snippetText.slice(0, 80)}
       >
         💬
       </button>
@@ -290,7 +290,7 @@ const ThreadButton: React.FC<ThreadButtonProps> = ({
       onClick={onClick}
       className={baseClasses}
       style={{ top }}
-      title={`${agent.name}: ${thread.tensionPoint}`}
+      title={`${agent.name}: ${thread.anchor.snippetText.slice(0, 80)}`}
     >
       {agent.emoji}
     </button>

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Document, Thread, Message, Section } from '../types';
+import type { Document, Thread, Message, Section, VisibleAnnotation, CrossReadingReaction } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -62,8 +62,7 @@ export const documentApi = {
 export interface ThreadListItem {
   threadId: string;
   threadType: 'comment' | 'discussion';
-  discussionType?: string;
-  tensionPoint: string;
+  sourceReactionId: string;
   participants: string[];
   messageCount: number;
   anchor: {
@@ -89,7 +88,7 @@ export const threadApi = {
     threadId: string,
     content: string,
     taggedAgent?: string
-  ): Promise<Message> => {
+  ): Promise<Message[]> => {
     const response = await api.post(`/threads/${threadId}/messages`, {
       content,
       taggedAgent,
@@ -103,12 +102,26 @@ export const threadApi = {
   },
 };
 
+// Annotation API
+export const annotationApi = {
+  getDocumentAnnotations: async (documentId: string): Promise<VisibleAnnotation[]> => {
+    const response = await api.get(`/pipeline/documents/${documentId}/annotations`);
+    return response.data;
+  },
+
+  getDocumentReactions: async (documentId: string): Promise<CrossReadingReaction[]> => {
+    const response = await api.get(`/pipeline/documents/${documentId}/reactions`);
+    return response.data;
+  },
+};
+
 // Pipeline API
 export interface PipelineResult {
   status: string;
   annotations: Record<string, unknown[]>;
-  seeds: unknown[];
-  threads: Thread[];  // Full thread data including anchor, messages
+  reactions: unknown[];
+  strongReactions: unknown[];
+  threads: Thread[];
   timings: Record<string, number>;
 }
 
@@ -116,16 +129,14 @@ export const pipelineApi = {
   generateDiscussions: async (
     documentId: string,
     options?: {
-      maxAnnotationsPerAgent?: number;
-      targetSeeds?: number;
+      annotationsPerAgent?: number;
       turnsPerDiscussion?: number;
     }
   ): Promise<PipelineResult> => {
     const response = await api.post(
       `/pipeline/documents/${documentId}/generate-with-logging`,
       {
-        maxAnnotationsPerAgent: options?.maxAnnotationsPerAgent ?? 12,
-        targetSeeds: options?.targetSeeds ?? 5,
+        annotationsPerAgent: options?.annotationsPerAgent ?? 7,
         turnsPerDiscussion: options?.turnsPerDiscussion ?? 4,
       }
     );

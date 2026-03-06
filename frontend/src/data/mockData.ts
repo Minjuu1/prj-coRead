@@ -11,11 +11,9 @@ export const mockThreads: Thread[] = [
   {
     threadId: 'thread_001',
     documentId: 'doc_001',
-    seedId: 'seed_001',
+    sourceReactionId: 'reaction_001',
+    sourceAnnotationIds: ['ann_001', 'ann_002'],
     threadType: 'discussion',
-    discussionType: 'position_taking',
-    tensionPoint:
-      'The claim that Tay failed due to design premise, not technology, is a bold reframing',
     keywords: ['Tay', 'community', 'machine learning', 'design'],
     anchor: {
       sectionId: 'section_1',
@@ -71,10 +69,9 @@ export const mockThreads: Thread[] = [
   {
     threadId: 'thread_002',
     documentId: 'doc_001',
-    seedId: 'seed_002',
+    sourceReactionId: 'reaction_002',
+    sourceAnnotationIds: ['ann_003'],
     threadType: 'comment',
-    tensionPoint:
-      'Study relies on a single, carefully selected community which limits generalizability',
     keywords: ['methodology', 'generalizability', 'sample'],
     anchor: {
       sectionId: 'section_5',
@@ -103,11 +100,9 @@ export const mockThreads: Thread[] = [
   {
     threadId: 'thread_003',
     documentId: 'doc_001',
-    seedId: 'seed_003',
+    sourceReactionId: 'reaction_003',
+    sourceAnnotationIds: ['ann_004', 'ann_005'],
     threadType: 'discussion',
-    discussionType: 'deepening',
-    tensionPoint:
-      'Users displayed aggressive behavior toward the bot - what does this reveal about human-AI interaction?',
     keywords: ['aggression', 'abuse', 'anthropomorphism', 'exploration'],
     anchor: {
       sectionId: 'section_6',
@@ -163,10 +158,9 @@ export const mockThreads: Thread[] = [
   {
     threadId: 'thread_004',
     documentId: 'doc_001',
-    seedId: 'seed_004',
+    sourceReactionId: 'reaction_004',
+    sourceAnnotationIds: ['ann_006'],
     threadType: 'comment',
-    tensionPoint:
-      'The act of naming and gifting subscription signals genuine community acceptance',
     keywords: ['community ownership', 'naming', 'identity', 'belonging'],
     anchor: {
       sectionId: 'section_7',
@@ -195,11 +189,9 @@ export const mockThreads: Thread[] = [
   {
     threadId: 'thread_005',
     documentId: 'doc_001',
-    seedId: 'seed_005',
+    sourceReactionId: 'reaction_005',
+    sourceAnnotationIds: ['ann_007', 'ann_008'],
     threadType: 'discussion',
-    discussionType: 'connecting',
-    tensionPoint:
-      "Nonsensical bot output became a source of engagement rather than frustration",
     keywords: ['ambiguity', 'interpretation', 'meaning-making', 'engagement'],
     anchor: {
       sectionId: 'section_8',
@@ -255,11 +247,9 @@ export const mockThreads: Thread[] = [
   {
     threadId: 'thread_006',
     documentId: 'doc_001',
-    seedId: 'seed_006',
+    sourceReactionId: 'reaction_006',
+    sourceAnnotationIds: ['ann_009', 'ann_010'],
     threadType: 'discussion',
-    discussionType: 'deepening',
-    tensionPoint:
-      'The developmental metaphor shaped how users perceived and treated the bot',
     keywords: ['development', 'metaphor', 'expectations', 'anthropomorphism'],
     anchor: {
       sectionId: 'section_3',

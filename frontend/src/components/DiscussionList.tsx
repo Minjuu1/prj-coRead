@@ -1,7 +1,6 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 import { AGENTS, type AgentId } from '../constants/agents';
-import { DISCUSSION_TYPES, type DiscussionType } from '../constants/discussion';
 import type { ThreadListItem } from '../services/api';
 
 interface DiscussionListProps {
@@ -51,7 +50,6 @@ const ThreadListItemView: React.FC<ThreadListItemViewProps> = ({
   onSelect,
 }) => {
   const isDiscussion = thread.threadType === 'discussion';
-  const discussionType = thread.discussionType as DiscussionType | undefined;
 
   return (
     <button
@@ -67,11 +65,6 @@ const ThreadListItemView: React.FC<ThreadListItemViewProps> = ({
           <>
             <span className="text-base">💬</span>
             <span className="text-xs text-gray-500">Discussion</span>
-            {discussionType && (
-              <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                {DISCUSSION_TYPES[discussionType]?.label || discussionType}
-              </span>
-            )}
           </>
         ) : (
           <>
@@ -82,9 +75,9 @@ const ThreadListItemView: React.FC<ThreadListItemViewProps> = ({
         )}
       </div>
 
-      {/* Tension Point */}
+      {/* Anchor snippet */}
       <p className="text-sm text-gray-900 line-clamp-2 mb-2">
-        {thread.tensionPoint}
+        {thread.anchor.snippetText}
       </p>
 
       {/* Footer */}

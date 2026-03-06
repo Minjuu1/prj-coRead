@@ -94,7 +94,6 @@ export function DocumentUpload({ userId, onComplete }: DocumentUploadProps) {
       setStage('generating-threads');
       const pipelineResult = await pipelineApi.generateDiscussions(document.documentId, {
         maxAnnotationsPerAgent: 12,
-        targetSeeds: 5,
         turnsPerDiscussion: 4,
       });
 

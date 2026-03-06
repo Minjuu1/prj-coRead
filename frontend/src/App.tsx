@@ -47,8 +47,7 @@ function App() {
       const threadListItems: ThreadListItem[] = mockThreads.map((t) => ({
         threadId: t.threadId,
         threadType: t.threadType,
-        discussionType: t.discussionType,
-        tensionPoint: t.tensionPoint,
+        sourceReactionId: t.sourceReactionId,
         participants: t.participants,
         messageCount: t.messages?.length || 0,
         anchor: t.anchor,
@@ -105,8 +104,7 @@ function App() {
       const threadListItems: ThreadListItem[] = (threads as Thread[]).map((t) => ({
         threadId: t.threadId,
         threadType: t.threadType,
-        discussionType: t.discussionType,
-        tensionPoint: t.tensionPoint,
+        sourceReactionId: t.sourceReactionId,
         participants: t.participants,
         messageCount: t.messages?.length || 0,
         anchor: t.anchor,
@@ -166,50 +164,77 @@ function App() {
     setSelectedThread(null);
   };
 
+  const [isAgentThinking, setIsAgentThinking] = useState(false);
+  const [isGeneratingMore, setIsGeneratingMore] = useState(false);
+
+  const updateThread = (updatedThread: Thread) => {
+    setSelectedThread(updatedThread);
+    const updatedFullThreads = fullThreads.map((t) =>
+      t.threadId === updatedThread.threadId ? updatedThread : t
+    );
+    setFullThreads(updatedFullThreads);
+  };
+
   const handleSendMessage = async (content: string, taggedAgent?: AgentId) => {
     if (!selectedThread) return;
 
+    // Optimistic: show user message immediately
+    const optimisticMessage: Message = {
+      messageId: `msg_${Date.now()}`,
+      threadId: selectedThread.threadId,
+      author: 'user' as const,
+      content,
+      references: [],
+      taggedAgent,
+      timestamp: new Date().toISOString(),
+    };
+
+    const threadWithUserMsg = {
+      ...selectedThread,
+      messages: [...selectedThread.messages, optimisticMessage],
+    };
+    updateThread(threadWithUserMsg);
+    setIsAgentThinking(true);
+
     try {
-      // Send message to API
-      const response = await threadApi.sendMessage(
+      // Send message to API — returns [user_message, ...agent_responses]
+      const allMessages = await threadApi.sendMessage(
         selectedThread.threadId,
         content,
         taggedAgent
       );
 
-      // Update local thread with new message(s)
-      // The API might return the user message + agent response
-      const newMessages: Message[] = Array.isArray(response) ? response : [response];
-
+      // Replace optimistic user message with server response + agent messages
       const updatedThread = {
         ...selectedThread,
-        messages: [...selectedThread.messages, ...newMessages],
+        messages: [...selectedThread.messages, ...allMessages],
       };
-
-      setSelectedThread(updatedThread);
-
-      // Update store
-      const updatedFullThreads = fullThreads.map((t) =>
-        t.threadId === selectedThread.threadId ? updatedThread : t
-      );
-      setFullThreads(updatedFullThreads);
+      updateThread(updatedThread);
     } catch (err) {
       console.error('[App] Failed to send message:', err);
-      // Fallback: add message locally only
-      const newMessage: Message = {
-        messageId: `msg_${Date.now()}`,
-        threadId: selectedThread.threadId,
-        author: 'user' as const,
-        content,
-        references: [],
-        taggedAgent,
-        timestamp: new Date().toISOString(),
-      };
+      // Keep optimistic user message on failure
+    } finally {
+      setIsAgentThinking(false);
+    }
+  };
 
-      setSelectedThread({
-        ...selectedThread,
-        messages: [...selectedThread.messages, newMessage],
-      });
+  const handleGenerateMore = async () => {
+    if (!selectedThread || isGeneratingMore) return;
+
+    setIsGeneratingMore(true);
+    try {
+      const newMessages = await threadApi.generateMore(selectedThread.threadId);
+      if (newMessages.length > 0) {
+        const updatedThread = {
+          ...selectedThread,
+          messages: [...selectedThread.messages, ...newMessages],
+        };
+        updateThread(updatedThread);
+      }
+    } catch (err) {
+      console.error('[App] Failed to generate more:', err);
+    } finally {
+      setIsGeneratingMore(false);
     }
   };
 
@@ -305,6 +330,9 @@ function App() {
               thread={selectedThread}
               onBack={handleBack}
               onSendMessage={handleSendMessage}
+              onGenerateMore={handleGenerateMore}
+              isAgentThinking={isAgentThinking}
+              isGeneratingMore={isGeneratingMore}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center p-8">

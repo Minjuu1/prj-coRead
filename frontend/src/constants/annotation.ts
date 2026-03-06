@@ -66,6 +66,6 @@ export function getAnnotationTypesForAgent(agentId: AgentId): AnnotationType[] {
 }
 
 export const ANNOTATION_CONFIG = {
-  maxPerAgent: 20,
-  targetModes: ['text', 'section'] as const,
+  minPerAgent: 5,
+  maxPerAgent: 7,
 } as const;
