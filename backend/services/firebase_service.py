@@ -16,6 +16,8 @@ class InMemoryStorage:
         self.documents: Dict[str, dict] = {}
         self.threads: Dict[str, dict] = {}
         self.memories: Dict[str, dict] = {}  # {document_id}_{agent_id} -> memory
+        self.annotations: Dict[str, List[dict]] = {}  # document_id -> [annotations]
+        self.reactions: Dict[str, List[dict]] = {}  # document_id -> [reactions]
 
     def get_user(self, user_id: str) -> Optional[dict]:
         return self.users.get(user_id)
@@ -130,6 +132,30 @@ class InMemoryStorage:
             m for k, m in self.memories.items()
             if k.startswith(f"{document_id}_")
         ]
+
+    # Annotation operations (visible annotations)
+    def save_annotations(self, document_id: str, annotations: List[dict]) -> int:
+        """Save visible annotations for a document."""
+        if document_id not in self.annotations:
+            self.annotations[document_id] = []
+        self.annotations[document_id].extend(annotations)
+        return len(annotations)
+
+    def get_document_annotations(self, document_id: str) -> List[dict]:
+        """Get all visible annotations for a document."""
+        return self.annotations.get(document_id, [])
+
+    # Cross-reading reaction operations
+    def save_reactions(self, document_id: str, reactions: List[dict]) -> int:
+        """Save cross-reading reactions for a document."""
+        if document_id not in self.reactions:
+            self.reactions[document_id] = []
+        self.reactions[document_id].extend(reactions)
+        return len(reactions)
+
+    def get_document_reactions(self, document_id: str) -> List[dict]:
+        """Get all cross-reading reactions for a document."""
+        return self.reactions.get(document_id, [])
 
 
 class FirebaseService:
@@ -355,6 +381,52 @@ class FirebaseService:
 
         memories = self._db.collection('memories').where('documentId', '==', document_id).get()
         return [mem.to_dict() for mem in memories]
+
+    # Annotation operations (visible annotations)
+    def save_annotations(self, document_id: str, annotations: List[dict]) -> int:
+        """Save visible annotations for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.save_annotations(document_id, annotations)
+
+        batch = self._db.batch()
+        for ann in annotations:
+            ref = self._db.collection('annotations').document(ann["annotationId"])
+            batch.set(ref, ann)
+        batch.commit()
+        return len(annotations)
+
+    def get_document_annotations(self, document_id: str) -> List[dict]:
+        """Get all visible annotations for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.get_document_annotations(document_id)
+
+        docs = self._db.collection('annotations').where('documentId', '==', document_id).get()
+        return [doc.to_dict() for doc in docs]
+
+    # Cross-reading reaction operations
+    def save_reactions(self, document_id: str, reactions: List[dict]) -> int:
+        """Save cross-reading reactions for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.save_reactions(document_id, reactions)
+
+        batch = self._db.batch()
+        for reaction in reactions:
+            ref = self._db.collection('reactions').document(reaction["reactionId"])
+            batch.set(ref, reaction)
+        batch.commit()
+        return len(reactions)
+
+    def get_document_reactions(self, document_id: str) -> List[dict]:
+        """Get all cross-reading reactions for a document."""
+        self._ensure_initialized()
+        if self._storage:
+            return self._storage.get_document_reactions(document_id)
+
+        docs = self._db.collection('reactions').where('documentId', '==', document_id).get()
+        return [doc.to_dict() for doc in docs]
 
 
 # Singleton instance

@@ -23,13 +23,12 @@ if os.path.exists(_mock_sections_path):
         MOCK_SECTIONS = _parsed_data.get("sections", [])
         MOCK_DOCUMENT_TITLE = _parsed_data.get("title", "Untitled Document")
 else:
-    # Fallback if file doesn't exist
     MOCK_SECTIONS = []
     MOCK_DOCUMENT_TITLE = "Untitled Document"
 
 
 class GenerateRequest(BaseModel):
-    maxAnnotationsPerAgent: int = 20
+    annotationsPerAgent: int = 7
     turnsPerDiscussion: int = 4
 
 
@@ -39,7 +38,7 @@ class GenerateResponse(BaseModel):
     threadCount: Optional[int] = None
 
 
-# Store for tracking generation status (in production, use Redis or similar)
+# Store for tracking generation status
 generation_status = {}
 
 
@@ -49,11 +48,7 @@ async def generate_discussions(
     request: GenerateRequest,
     background_tasks: BackgroundTasks,
 ):
-    """
-    Start the full pipeline to generate discussions for a document.
-    This runs in the background and updates the document when complete.
-    """
-    # Get document
+    """Start the full pipeline to generate discussions for a document."""
     document = firebase_service.get_document(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -62,21 +57,19 @@ async def generate_discussions(
     if not sections:
         raise HTTPException(status_code=400, detail="Document has no parsed sections")
 
-    # Check if already generating
     if generation_status.get(document_id) == "running":
         return GenerateResponse(
             status="running",
             message="Generation already in progress for this document"
         )
 
-    # Start background generation
     generation_status[document_id] = "running"
 
     background_tasks.add_task(
         run_pipeline_background,
         document_id,
         sections,
-        request.maxAnnotationsPerAgent,
+        request.annotationsPerAgent,
         request.turnsPerDiscussion,
     )
 
@@ -98,11 +91,7 @@ async def generate_discussions_sync(
     document_id: str,
     request: GenerateRequest,
 ):
-    """
-    Run the full pipeline synchronously (for testing/debugging).
-    WARNING: This can take 30-60 seconds.
-    """
-    # Get document
+    """Run the full pipeline synchronously (for testing/debugging)."""
     document = firebase_service.get_document(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -115,11 +104,10 @@ async def generate_discussions_sync(
         result = await pipeline_service.run_full_pipeline(
             document_id=document_id,
             sections=sections,
-            max_annotations_per_agent=request.maxAnnotationsPerAgent,
+            annotations_per_agent=request.annotationsPerAgent,
             turns_per_discussion=request.turnsPerDiscussion,
         )
 
-        # Save threads
         threads = result.get("threads", [])
         for thread in threads:
             firebase_service.save_thread(thread)
@@ -137,7 +125,7 @@ async def generate_discussions_sync(
 async def run_pipeline_background(
     document_id: str,
     sections: list[dict],
-    max_annotations: int,
+    annotations_per_agent: int,
     turns: int,
 ):
     """Background task to run the pipeline."""
@@ -145,11 +133,10 @@ async def run_pipeline_background(
         result = await pipeline_service.run_full_pipeline(
             document_id=document_id,
             sections=sections,
-            max_annotations_per_agent=max_annotations,
+            annotations_per_agent=annotations_per_agent,
             turns_per_discussion=turns,
         )
 
-        # Save threads
         threads = result.get("threads", [])
         for thread in threads:
             firebase_service.save_thread(thread)
@@ -164,10 +151,7 @@ async def run_pipeline_background(
 
 @router.post("/test", response_model=GenerateResponse)
 async def test_pipeline_with_mock_data():
-    """
-    Test the pipeline with mock data (no PDF upload needed).
-    Uses the built-in mock sections.
-    """
+    """Test the pipeline with mock data (no PDF upload needed)."""
     document_id = "test_doc_001"
 
     try:
@@ -175,22 +159,17 @@ async def test_pipeline_with_mock_data():
         result = await pipeline_service.run_full_pipeline(
             document_id=document_id,
             sections=MOCK_SECTIONS,
-            max_annotations_per_agent=15,
+            annotations_per_agent=7,
             turns_per_discussion=3,
         )
 
         threads = result.get("threads", [])
-
-        # Save threads to in-memory storage
         for thread in threads:
             firebase_service.save_thread(thread)
 
-        # Print sample output for debugging
         print(f"\n[Test] Generated {len(threads)} threads:")
         for t in threads:
-            print(f"  - {t['threadType']}: {t['tensionPoint'][:50]}...")
-            print(f"    Participants: {t['participants']}")
-            print(f"    Messages: {len(t['messages'])}")
+            print(f"  - {t['threadType']}: {len(t['messages'])} messages, participants: {t['participants']}")
 
         return GenerateResponse(
             status="complete",
@@ -208,20 +187,16 @@ class DetailedPipelineResponse(BaseModel):
     """Detailed response with all intermediate pipeline results."""
     status: str
     annotations: dict  # {agentId: [annotations]}
-    clusters: list = []  # Phase 2a output
-    seeds: list
+    reactions: list = []  # Phase 2 cross-reading reactions
+    strongReactions: list = []  # Filtered strong reactions
     threads: list
     timings: dict  # {phase: seconds}
 
 
 @router.post("/test-with-logging", response_model=DetailedPipelineResponse)
 async def test_pipeline_with_logging():
-    """
-    Test the pipeline with mock data and return all intermediate results.
-    This is for debugging/dashboard purposes.
-    """
+    """Test the pipeline with mock data and return all intermediate results."""
     import time
-    from services.clustering_service import cluster_annotations, deduplicate_cross_section, format_clusters_summary
 
     document_id = "test_doc_001"
     timings = {}
@@ -229,60 +204,57 @@ async def test_pipeline_with_logging():
     try:
         print("[Pipeline Dashboard] Starting pipeline with detailed logging...")
 
-        # Initialize memory for all agents
         memory_service.initialize_for_document(document_id)
 
-        # Phase 1: Annotations
+        # Phase 1: Reading
         start_time = time.time()
         print("[Phase 1] Generating annotations from all agents...")
-        annotations_by_agent = await pipeline_service._phase1_annotations(
-            document_id, MOCK_SECTIONS, max_per_agent=15
+        annotations_by_agent = await pipeline_service._phase1_reading(
+            document_id, MOCK_SECTIONS, annotations_per_agent=7
         )
-        timings["phase1"] = round(time.time() - start_time, 2)
-        print(f"[Phase 1] Complete in {timings['phase1']}s")
+        visible = pipeline_service._store_visible_annotations(
+            document_id, annotations_by_agent, MOCK_SECTIONS
+        )
+        timings["phase1_reading"] = round(time.time() - start_time, 2)
+        print(f"[Phase 1] Complete in {timings['phase1_reading']}s")
         for agent_id, anns in annotations_by_agent.items():
             print(f"  - {agent_id}: {len(anns)} annotations")
 
-        # Dedup: remove same-agent cross-section duplicates
-        section_order = [s["title"] for s in MOCK_SECTIONS]
-        annotations_by_agent = deduplicate_cross_section(annotations_by_agent, section_order)
-
-        # Phase 2a: Clustering
+        # Phase 2: Cross-Reading
         start_time = time.time()
-        print("[Phase 2a] Clustering annotations...")
-        clusters = cluster_annotations(annotations_by_agent)
-        timings["phase2a"] = round(time.time() - start_time, 2)
-        multi_agent = sum(1 for c in clusters if c["agentCount"] >= 2)
-        print(f"[Phase 2a] Complete in {timings['phase2a']}s - {len(clusters)} clusters ({multi_agent} multi-agent)")
-        print(format_clusters_summary(clusters))
-
-        # Phase 2b: Seed Formation from clusters
-        start_time = time.time()
-        print("[Phase 2b] Generating seeds from clusters...")
-        seeds = await pipeline_service._phase2b_seed_formation(
-            clusters, MOCK_SECTIONS
+        print("[Phase 2] Cross-reading...")
+        all_reactions = await pipeline_service._phase2_cross_reading(
+            document_id, annotations_by_agent, MOCK_SECTIONS
         )
-        timings["phase2b"] = round(time.time() - start_time, 2)
-        print(f"[Phase 2b] Complete in {timings['phase2b']}s - {len(seeds)} seeds formed")
+        timings["phase2_cross_reading"] = round(time.time() - start_time, 2)
+        print(f"[Phase 2] Complete in {timings['phase2_cross_reading']}s - {len(all_reactions)} reactions")
 
-        # Phase 3-4: Thread Generation
-        start_time = time.time()
-        print("[Phase 3-4] Generating discussion threads...")
-        threads = await pipeline_service._phase3_4_thread_generation(
-            document_id, seeds, MOCK_SECTIONS, turns_per_discussion=3
+        firebase_service.save_reactions(document_id, all_reactions)
+
+        # Filtering (between Phase 2 → 3)
+        strong_reactions = pipeline_service._filter_reactions(all_reactions)
+        starters = pipeline_service._select_discussion_starters(
+            strong_reactions, annotations_by_agent
         )
-        timings["phase3_4"] = round(time.time() - start_time, 2)
-        print(f"[Phase 3-4] Complete in {timings['phase3_4']}s - {len(threads)} threads")
+        print(f"[Filtering] {len(strong_reactions)}/{len(all_reactions)} strong → {len(starters)} starters")
 
-        # Save threads
+        # Phase 3: Discussion Generation
+        start_time = time.time()
+        print("[Phase 3] Generating discussions...")
+        threads = await pipeline_service._phase3_discussion_generation(
+            document_id, starters, annotations_by_agent, MOCK_SECTIONS, turns_per_discussion=3
+        )
+        timings["phase3_discussion"] = round(time.time() - start_time, 2)
+        print(f"[Phase 3] Complete in {timings['phase3_discussion']}s - {len(threads)} threads")
+
         for thread in threads:
             firebase_service.save_thread(thread)
 
         return DetailedPipelineResponse(
             status="complete",
             annotations=annotations_by_agent,
-            clusters=clusters,
-            seeds=seeds,
+            reactions=all_reactions,
+            strongReactions=strong_reactions,
             threads=threads,
             timings=timings,
         )
@@ -298,14 +270,9 @@ async def generate_with_logging(
     document_id: str,
     request: GenerateRequest,
 ):
-    """
-    Run the full pipeline on a real document with detailed logging.
-    Returns all intermediate results for debugging/dashboard.
-    """
+    """Run the full pipeline on a real document with detailed logging."""
     import time
-    from services.clustering_service import cluster_annotations, deduplicate_cross_section, format_clusters_summary
 
-    # Get document
     document = firebase_service.get_document(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -318,62 +285,50 @@ async def generate_with_logging(
 
     try:
         print(f"[Pipeline Dashboard] Starting pipeline for document: {document_id}")
-        print(f"[Pipeline Dashboard] Document has {len(sections)} sections")
 
-        # Initialize memory for all agents
         memory_service.initialize_for_document(document_id)
 
-        # Phase 1: Annotations
+        # Phase 1: Reading
         start_time = time.time()
-        print("[Phase 1] Generating annotations from all agents...")
-        annotations_by_agent = await pipeline_service._phase1_annotations(
-            document_id, sections, max_per_agent=request.maxAnnotationsPerAgent
+        annotations_by_agent = await pipeline_service._phase1_reading(
+            document_id, sections, annotations_per_agent=request.annotationsPerAgent
         )
-        timings["phase1"] = round(time.time() - start_time, 2)
-        print(f"[Phase 1] Complete in {timings['phase1']}s")
-        for agent_id, anns in annotations_by_agent.items():
-            print(f"  - {agent_id}: {len(anns)} annotations")
-
-        # Dedup: remove same-agent cross-section duplicates
-        section_order = [s["title"] for s in sections]
-        annotations_by_agent = deduplicate_cross_section(annotations_by_agent, section_order)
-
-        # Phase 2a: Clustering
-        start_time = time.time()
-        print("[Phase 2a] Clustering annotations...")
-        clusters = cluster_annotations(annotations_by_agent)
-        timings["phase2a"] = round(time.time() - start_time, 2)
-        multi_agent = sum(1 for c in clusters if c["agentCount"] >= 2)
-        print(f"[Phase 2a] Complete in {timings['phase2a']}s - {len(clusters)} clusters ({multi_agent} multi-agent)")
-        print(format_clusters_summary(clusters))
-
-        # Phase 2b: Seed Formation from clusters
-        start_time = time.time()
-        print("[Phase 2b] Generating seeds from clusters...")
-        seeds = await pipeline_service._phase2b_seed_formation(
-            clusters, sections
+        visible = pipeline_service._store_visible_annotations(
+            document_id, annotations_by_agent, sections
         )
-        timings["phase2b"] = round(time.time() - start_time, 2)
-        print(f"[Phase 2b] Complete in {timings['phase2b']}s - {len(seeds)} seeds formed")
+        timings["phase1_reading"] = round(time.time() - start_time, 2)
 
-        # Phase 3-4: Thread Generation
+        # Phase 2: Cross-Reading
         start_time = time.time()
-        print("[Phase 3-4] Generating discussion threads...")
-        threads = await pipeline_service._phase3_4_thread_generation(
-            document_id, seeds, sections, turns_per_discussion=request.turnsPerDiscussion
+        all_reactions = await pipeline_service._phase2_cross_reading(
+            document_id, annotations_by_agent, sections
         )
-        timings["phase3_4"] = round(time.time() - start_time, 2)
-        print(f"[Phase 3-4] Complete in {timings['phase3_4']}s - {len(threads)} threads")
+        timings["phase2_cross_reading"] = round(time.time() - start_time, 2)
 
-        # Save threads
+        firebase_service.save_reactions(document_id, all_reactions)
+
+        # Filtering (between Phase 2 → 3)
+        strong_reactions = pipeline_service._filter_reactions(all_reactions)
+        starters = pipeline_service._select_discussion_starters(
+            strong_reactions, annotations_by_agent
+        )
+
+        # Phase 3: Discussion Generation
+        start_time = time.time()
+        threads = await pipeline_service._phase3_discussion_generation(
+            document_id, starters, annotations_by_agent, sections,
+            turns_per_discussion=request.turnsPerDiscussion
+        )
+        timings["phase3_discussion"] = round(time.time() - start_time, 2)
+
         for thread in threads:
             firebase_service.save_thread(thread)
 
         return DetailedPipelineResponse(
             status="complete",
             annotations=annotations_by_agent,
-            clusters=clusters,
-            seeds=seeds,
+            reactions=all_reactions,
+            strongReactions=strong_reactions,
             threads=threads,
             timings=timings,
         )
@@ -382,3 +337,17 @@ async def generate_with_logging(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Pipeline failed: {str(e)}")
+
+
+@router.get("/documents/{document_id}/annotations")
+async def get_document_annotations(document_id: str):
+    """Get all visible annotations for a document."""
+    annotations = firebase_service.get_document_annotations(document_id)
+    return annotations
+
+
+@router.get("/documents/{document_id}/reactions")
+async def get_document_reactions(document_id: str):
+    """Get all cross-reading reactions for a document."""
+    reactions = firebase_service.get_document_reactions(document_id)
+    return reactions

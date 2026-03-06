@@ -55,7 +55,7 @@ class ThoughtMemory(BaseModel):
     annotationType: Optional[AnnotationType] = None
 
     # Context
-    tensionPoint: str  # What was being discussed
+    sourceReactionId: Optional[str] = None  # Cross-reading reaction this relates to
     respondingTo: Optional[str] = None  # AgentId or 'user' if responding to someone
 
     # References made

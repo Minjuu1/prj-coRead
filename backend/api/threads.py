@@ -5,6 +5,7 @@ from datetime import datetime
 import uuid
 
 from services.firebase_service import firebase_service
+from services.agent_response_service import agent_response_service
 
 router = APIRouter(prefix="/threads", tags=["threads"])
 
@@ -31,19 +32,20 @@ class MessageResponse(BaseModel):
     threadId: str
     author: Literal['user', 'instrumental', 'critical', 'aesthetic']
     content: str
-    references: List[MessageReferenceResponse]
+    references: List[MessageReferenceResponse] = []
     taggedAgent: Optional[AgentId] = None
+    annotationType: Optional[str] = None
+    referencedAnnotationIds: Optional[List[str]] = None
     timestamp: str
 
 
 class ThreadResponse(BaseModel):
     threadId: str
     documentId: str
-    seedId: str
+    sourceReactionId: str
+    sourceAnnotationIds: List[str] = []
     threadType: Literal['comment', 'discussion']
-    discussionType: Optional[Literal['position_taking', 'deepening', 'connecting']] = None
-    tensionPoint: str
-    keywords: List[str]
+    keywords: List[str] = []
     anchor: AnchorResponse
     participants: List[AgentId]
     messages: List[MessageResponse]
@@ -54,8 +56,7 @@ class ThreadResponse(BaseModel):
 class ThreadListItem(BaseModel):
     threadId: str
     threadType: Literal['comment', 'discussion']
-    discussionType: Optional[str] = None
-    tensionPoint: str
+    sourceReactionId: str = ""
     participants: List[AgentId]
     messageCount: int
     anchor: AnchorResponse
@@ -66,11 +67,17 @@ class SendMessageRequest(BaseModel):
     taggedAgent: Optional[AgentId] = None
 
 
+def _get_document_sections(document_id: str) -> list[dict]:
+    """Get document sections for context. Returns empty list if not found."""
+    document = firebase_service.get_document(document_id)
+    if document is None:
+        return []
+    return document.get("parsedContent", {}).get("sections", [])
+
+
 @router.get("/document/{document_id}", response_model=List[ThreadListItem])
 async def get_document_threads(document_id: str):
-    """
-    Get all threads for a document.
-    """
+    """Get all threads for a document."""
     document = firebase_service.get_document(document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -81,8 +88,7 @@ async def get_document_threads(document_id: str):
         ThreadListItem(
             threadId=t["threadId"],
             threadType=t["threadType"],
-            discussionType=t.get("discussionType"),
-            tensionPoint=t["tensionPoint"],
+            sourceReactionId=t.get("sourceReactionId", ""),
             participants=t["participants"],
             messageCount=len(t.get("messages", [])),
             anchor=AnchorResponse(**t["anchor"])
@@ -93,9 +99,7 @@ async def get_document_threads(document_id: str):
 
 @router.get("/{thread_id}", response_model=ThreadResponse)
 async def get_thread(thread_id: str):
-    """
-    Get thread details.
-    """
+    """Get thread details."""
     thread = firebase_service.get_thread(thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
@@ -103,16 +107,15 @@ async def get_thread(thread_id: str):
     return ThreadResponse(**thread)
 
 
-@router.post("/{thread_id}/messages", response_model=MessageResponse)
+@router.post("/{thread_id}/messages", response_model=List[MessageResponse])
 async def send_message(thread_id: str, request: SendMessageRequest):
-    """
-    Send a message to a thread.
-    """
+    """Send a user message and get agent response(s)."""
     thread = firebase_service.get_thread(thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    message = {
+    # Create and save user message
+    user_message = {
         "messageId": f"msg_{uuid.uuid4().hex[:12]}",
         "threadId": thread_id,
         "author": "user",
@@ -121,21 +124,49 @@ async def send_message(thread_id: str, request: SendMessageRequest):
         "taggedAgent": request.taggedAgent,
         "timestamp": datetime.utcnow().isoformat()
     }
+    firebase_service.add_message_to_thread(thread_id, user_message)
 
-    firebase_service.add_message_to_thread(thread_id, message)
+    # Get document sections for context
+    document_id = thread.get("documentId", "")
+    sections = _get_document_sections(document_id)
 
-    return MessageResponse(**message)
+    # Refresh thread to include user message
+    thread = firebase_service.get_thread(thread_id)
+
+    # Generate agent responses
+    agent_messages = await agent_response_service.generate_response_to_user(
+        thread=thread,
+        user_message=user_message,
+        document_id=document_id,
+        sections=sections,
+    )
+
+    # Save agent messages
+    for msg in agent_messages:
+        firebase_service.add_message_to_thread(thread_id, msg)
+
+    all_messages = [user_message] + agent_messages
+    return [MessageResponse(**msg) for msg in all_messages]
 
 
 @router.post("/{thread_id}/generate-more", response_model=List[MessageResponse])
 async def generate_more(thread_id: str):
-    """
-    Generate additional discussion turns. (Placeholder for Phase 2+)
-    """
+    """Generate additional discussion turns."""
     thread = firebase_service.get_thread(thread_id)
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    # Phase 1: Return empty list (no LLM generation yet)
-    # Phase 2+: Will implement actual agent discussion generation
-    return []
+    document_id = thread.get("documentId", "")
+    sections = _get_document_sections(document_id)
+
+    new_messages = await agent_response_service.generate_more_turns(
+        thread=thread,
+        document_id=document_id,
+        sections=sections,
+        num_turns=4,
+    )
+
+    for msg in new_messages:
+        firebase_service.add_message_to_thread(thread_id, msg)
+
+    return [MessageResponse(**msg) for msg in new_messages]

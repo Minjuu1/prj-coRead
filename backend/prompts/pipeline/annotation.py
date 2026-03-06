@@ -1,6 +1,7 @@
 """
 Phase 1: Annotation Generation Prompts
 Each agent reads the document and generates annotations from their perspective.
+Annotations are visible to users as a reading layer on the document.
 """
 
 from config.agents import AGENTS
@@ -21,18 +22,21 @@ def get_annotation_system_prompt(agent_id: str) -> str:
 </Voice Constraint>
 
 Your task is to read academic text and identify points that stand out from your perspective.
-You will generate annotations - moments where you notice something worth discussing.
+You will generate annotations — moments where you notice something worth sharing with other readers.
+
+Each annotation will be visible alongside the document text as a margin note.
+Write your reasoning as you would for a reading companion who wants to understand your perspective.
 
 For each annotation, you must:
 1. Select the EXACT text (a sentence or short passage) that triggered your reaction
 2. Categorize your reaction type
-3. Explain your reasoning in your natural voice — as if you're jotting a margin note, not writing a formal report
+3. Explain your reasoning in your natural voice
 
 CRITICAL: The "text" field must be an EXACT quote from the document - copy it precisely.
-This text will be used to locate the annotation in the document."""
+This text will be used to locate and highlight the annotation in the document."""
 
 
-def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: int = 20) -> tuple[str, str]:
+def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: int = 7) -> tuple[str, str]:
     """
     Returns (system_prompt, user_prompt) for annotation generation.
     """
@@ -41,8 +45,12 @@ def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: 
     # Format sections with approximate word counts for natural distribution
     sections_text = ""
     section_info_lines = []
+    MAX_SECTION_CHARS = 2000
     for section in sections:
-        sections_text += f"\n\n## {section['title']}\n{section['content']}"
+        content = section['content']
+        if len(content) > MAX_SECTION_CHARS:
+            content = content[:MAX_SECTION_CHARS] + "... [truncated]"
+        sections_text += f"\n\n## {section['title']}\n{content}"
         word_count = len(section['content'].split())
         section_info_lines.append(f"- {section['title']} (~{word_count} words)")
 
@@ -59,7 +67,7 @@ def get_annotation_prompt(agent_id: str, sections: list[dict], max_annotations: 
     # Generate type options string for this agent
     type_options = " | ".join(agent_types.keys())
 
-    user_prompt = f"""Read the following academic text and generate exactly {max_annotations} annotations from your perspective.
+    user_prompt = f"""Read the following academic text and generate 5 to 7 annotations from your perspective.
 
 <Document>
 {sections_text}
@@ -77,7 +85,7 @@ Return a JSON object with an "annotations" array:
       "type": "{type_options}",
       "sectionTitle": "The section title where this text appears",
       "text": "EXACT quoted text from the document (1-3 sentences)",
-      "reasoning": "Why this stands out from your perspective (2-3 sentences)"
+      "reasoning": "Why this stands out from your perspective (2-4 sentences)"
     }}
   ]
 }}
@@ -87,26 +95,24 @@ Return a JSON object with an "annotations" array:
 The document has {n_sections} sections:
 {section_list_text}
 
-You should annotate across multiple sections, but distribute NATURALLY based on how much each section matters to your reading stance.
-- Longer, more substantive sections deserve more annotations
-- Shorter or less relevant sections may have fewer (or even zero)
-- It's fine to have 5+ annotations in a rich section and 0-1 in a thin one
-- Do NOT force an even split - follow your genuine reactions
-
-Academic papers have sections that serve different purposes. Prioritize annotations on sections where original claims, evidence, or methodological decisions are presented (e.g., Introduction, Method, Findings, Discussion). For Conclusion or Abstract sections, only annotate if you find a genuinely NEW point not already covered elsewhere in the paper — these sections typically summarize earlier content and rarely warrant separate annotations. If a point in the Conclusion was already made in the Introduction or Discussion, skip it.
+Distribute annotations naturally across sections based on what genuinely stands out to you.
+- Longer, more substantive sections may deserve more annotations
+- Shorter or less relevant sections may have zero
+- Prioritize sections with original claims, evidence, or methodological decisions
+- Skip Conclusion/Abstract unless they contain genuinely new points
 </Section Coverage>
 
 <Guidelines>
-- You MUST generate exactly {max_annotations} annotations - no fewer
+- Generate between 5 and 7 annotations. Quality over quantity — each should represent a genuine moment of engagement.
 - Use ALL {len(agent_types)} of your annotation types at least once
 - The "text" field MUST be an exact copy from the document - do not paraphrase
-- Each text selection should be 1-3 sentences (not too short, not too long)
-- Go deep: multiple annotations on the same paragraph are fine if different aspects stand out
-- VOICE: Write reasoning like a margin note — specific, direct, conversational. Do NOT restate the annotation type label ("I challenge this because..." or "This is interesting because..."). Instead, just say what you actually think about the passage.
+- Each text selection should be 1-3 sentences
+- Multiple annotations on the same paragraph are fine if different aspects stand out
+- VOICE: Write reasoning like a margin note — specific, direct, conversational. Do NOT restate the annotation type label.
   BAD: "I question the assumption that 15 participants is sufficient."
   GOOD: "Fifteen participants — for claims this broad? The gap between sample and conclusion feels wide."
 </Guidelines>
 
-Generate your {max_annotations} annotations now."""
+Generate your annotations now."""
 
     return system_prompt, user_prompt

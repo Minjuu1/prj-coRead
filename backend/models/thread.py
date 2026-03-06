@@ -5,7 +5,6 @@ from datetime import datetime
 
 AgentId = Literal['instrumental', 'critical', 'aesthetic']
 ThreadType = Literal['comment', 'discussion']
-DiscussionType = Literal['position_taking', 'deepening', 'connecting']
 # Stance-specific annotation types (2-3 per stance, 7 total):
 # - Instrumental: note, stuck
 # - Critical: question, uncover, alternative
@@ -62,10 +61,9 @@ class Message(BaseModel):
 class Thread(BaseModel):
     threadId: str
     documentId: str
-    seedId: str
+    sourceReactionId: str  # Cross-reading reaction that started this
+    sourceAnnotationIds: List[str] = []  # Annotations grounding this discussion
     threadType: ThreadType
-    discussionType: Optional[DiscussionType] = None
-    tensionPoint: str
     keywords: List[str] = []
     anchor: Anchor
     participants: List[AgentId]
