@@ -1,0 +1,128 @@
+// ============================================================
+// Core Types — CoRead
+// 원칙: id는 DB 참조용. LLM 컨텍스트에 들어가는 건 항상 텍스트.
+// ============================================================
+
+export type AgentId = 'critical' | 'instrumental' | 'aesthetic'
+export type Author = AgentId | 'student'
+export type AnnotationType = 'observation' | 'question' | 'challenge'
+export type PaperStatus = 'processing' | 'ready' | 'error'
+export type ThreadStatus = 'locked' | 'open'
+
+// ============================================================
+// Paper
+// ============================================================
+
+export interface Paper {
+  id: string
+  title: string
+  url: string
+  status: PaperStatus
+  summary?: string
+  uploadedAt: Date
+}
+
+// ============================================================
+// Chunk
+// ============================================================
+
+export interface Chunk {
+  id: string
+  paperId: string
+  content: string
+  section: string
+  position: number        // 0.0 ~ 1.0 논문 내 상대 위치
+  charStart: number
+  charEnd: number
+  pageStart: number
+  pageEnd: number
+  linkedChunks: string[]  // cross-reference chunk id 목록 (DB 참조용)
+}
+
+// ============================================================
+// Annotation
+// ============================================================
+
+export interface BoundingRect {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  width: number
+  height: number
+}
+
+export interface Annotation {
+  id: string
+  paperId: string
+  chunkId: string
+  agent: AgentId
+  type: AnnotationType
+
+  content: string           // LLM 생성 텍스트 (에이전트 annotation 전문)
+  summary: string           // 1-2문장 압축본 → annotation_memory에 들어가는 것
+
+  // 텍스트 anchor — 반드시 논문 원문 기반
+  targetText: string        // 논문 원문 exact match (LLM 생성 텍스트 금지)
+  targetStart: number
+  targetEnd: number
+
+  // PDF 렌더링용 좌표 — Phase 1에서 반드시 저장
+  pageNumber: number
+  boundingRect: BoundingRect
+  rects: BoundingRect[]
+
+  understandingAtTime: string
+  createdAt: Date
+}
+
+// react-pdf-highlighter-extended 렌더링 형식
+// Annotation → PDFHighlight 변환 후 PdfHighlighter에 전달
+export interface PDFHighlight {
+  id: string                   // = annotation.id (= threadId for click routing)
+  position: {
+    boundingRect: BoundingRect & { pageNumber: number }
+    rects: (BoundingRect & { pageNumber: number })[]
+    pageNumber: number
+  }
+  content: { text: string }    // = annotation.targetText
+}
+
+// ============================================================
+// Thread
+// ============================================================
+
+export interface Thread {
+  id: string
+  paperId: string
+  chunkId: string
+  contestablePoint: string          // 논쟁 지점 텍스트
+  seedAnnotationSummaries: string[] // annotation summary 텍스트 목록 (id 아님)
+  openQuestion: string              // authentic question
+  status: ThreadStatus
+  createdAt: Date
+}
+
+// ============================================================
+// Message
+// Firestore 서브컬렉션: threads/{threadId}/messages/{msgId}
+// ============================================================
+
+export interface Message {
+  id: string
+  author: Author
+  content: string
+  timestamp: Date
+}
+
+// ============================================================
+// LearnerProfile
+// ============================================================
+
+export interface LearnerProfile {
+  userId: string
+  paperId: string
+  threadIds: string[]
+  createdAt: Date
+  updatedAt: Date
+}
