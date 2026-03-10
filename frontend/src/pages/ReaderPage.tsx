@@ -1,0 +1,133 @@
+import { useRef, useState, useCallback, useEffect } from 'react'
+import { Navigate } from 'react-router-dom'
+import { usePaperStore } from '../stores/paperStore'
+import { useThreadStore } from '../stores/threadStore'
+import { PaperReader } from '../components/PaperReader/PaperReader'
+import { ThreadPanel } from '../components/ThreadPanel/ThreadPanel'
+import { getThreads, getPaperStatus, reprocessPaper } from '../services/api'
+
+const MIN_LEFT = 320
+const MIN_RIGHT = 300
+
+export default function ReaderPage() {
+  const { paperId, pdfUrl } = usePaperStore()
+  const setThreads = useThreadStore((s) => s.setThreads)
+  const [leftWidth, setLeftWidth] = useState<number | null>(null)
+  const [threadPanelOpen, setThreadPanelOpen] = useState(true)
+  const [reprocessing, setReprocessing] = useState(false)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const handleReprocess = useCallback(async () => {
+    if (!paperId || reprocessing) return
+    setReprocessing(true)
+    await reprocessPaper(paperId)
+    pollRef.current = setInterval(async () => {
+      const { status } = await getPaperStatus(paperId)
+      if (status === 'ready' || status === 'error') {
+        clearInterval(pollRef.current!)
+        pollRef.current = null
+        setReprocessing(false)
+        if (status === 'ready') {
+          const threads = await getThreads(paperId)
+          setThreads(threads)
+        }
+      }
+    }, 2000)
+  }, [paperId, reprocessing, setThreads])
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+
+  // threads 로드
+  useEffect(() => {
+    if (!paperId) return
+    getThreads(paperId).then(setThreads)
+  }, [paperId, setThreads])
+
+  // 초기 너비: 컨테이너 너비 - 420px (thread panel)
+  useEffect(() => {
+    if (containerRef.current) {
+      setLeftWidth(containerRef.current.offsetWidth - 720)
+    }
+  }, [])
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    dragging.current = true
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragging.current || !containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const newLeft = e.clientX - rect.left
+      const containerW = containerRef.current.offsetWidth
+      if (newLeft >= MIN_LEFT && containerW - newLeft >= MIN_RIGHT) {
+        setLeftWidth(newLeft)
+      }
+    }
+    const onMouseUp = () => {
+      dragging.current = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [])
+
+  if (!pdfUrl) return <Navigate to="/upload" replace />
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}
+    >
+      {/* PDF 뷰어 */}
+      <div
+        style={{
+          width: threadPanelOpen ? (leftWidth ?? 'calc(100% - 720px)') : '150%',
+          flexShrink: 0,
+          overflow: 'hidden',
+          transition: threadPanelOpen ? 'none' : 'width 0.2s ease',
+        }}
+      >
+        <PaperReader
+          pdfUrl={pdfUrl}
+          threadPanelOpen={threadPanelOpen}
+          onToggleThreadPanel={() => setThreadPanelOpen((v) => !v)}
+          onReprocess={handleReprocess}
+          reprocessing={reprocessing}
+        />
+      </div>
+
+      {/* 드래그 핸들 */}
+      {threadPanelOpen && (
+        <div
+          onMouseDown={onMouseDown}
+          style={{
+            width: '4px', flexShrink: 0,
+            background: 'var(--border)',
+            cursor: 'col-resize',
+            transition: 'background 0.15s',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = '#bbb')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--border)')}
+        />
+      )}
+
+      {/* Thread Panel */}
+      {threadPanelOpen && (
+        <div style={{ flex: 1, minWidth: MIN_RIGHT, overflow: 'hidden' }}>
+          <ThreadPanel />
+        </div>
+      )}
+    </div>
+  )
+}
