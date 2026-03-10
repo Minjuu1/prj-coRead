@@ -6,10 +6,15 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 
 from pipeline.ingestion import run_ingestion
-from pipeline.thread_gen import generate_threads
-from pipeline.seed_formation import generate_seed_messages
+from pipeline.agent_gen import generate_agents
+from pipeline.agent_reading import run_agent_reading
+from pipeline.cross_reading import find_contested_excerpts
+from pipeline.discussion_formation import form_discussions
 from db.vector_store import add_chunks
-from db.firestore import save_chunks, save_paper_meta, save_threads, get_threads_by_paper
+from db.firestore import (
+    save_chunks, save_paper_meta, save_threads, get_threads_by_paper,
+    save_agents, get_agents_by_paper, save_annotations,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,8 @@ _status: dict[str, str] = {}
 _chunks: dict[str, list] = {}
 # paper_id → threads (in-memory cache)
 _threads: dict[str, list] = {}
+# paper_id → agents (in-memory cache)
+_agents: dict[str, list] = {}
 
 
 # ──────────────────────────────────────────────
@@ -38,28 +45,42 @@ def _run_pipeline(paper_id: str, pdf_path: str) -> None:
         _chunks[paper_id] = chunks
 
         if chunks:
-            add_chunks(paper_id, chunks)        # Chroma (벡터 검색)
-            save_chunks(paper_id, chunks)        # Firebase (좌표 영구 저장)
+            add_chunks(paper_id, chunks)
+            save_chunks(paper_id, chunks)
 
-        logger.info(f"[pipeline] generating threads for {paper_id}")
-        threads = generate_threads(paper_id, chunks)
+        logger.info(f"[pipeline] generating agents for {paper_id}")
+        agents = generate_agents(paper_id, chunks)
+        _agents[paper_id] = agents
+        if agents:
+            save_agents(paper_id, agents)
 
-        logger.info(f"[pipeline] generating seed messages for {paper_id}")
-        threads = generate_seed_messages(threads)
+        logger.info(f"[pipeline] agent reading for {paper_id}")
+        annotations = run_agent_reading(agents, chunks)
+        if annotations:
+            save_annotations(paper_id, annotations)
 
+        logger.info(f"[pipeline] cross-reading contested excerpts for {paper_id}")
+        contested_excerpts = find_contested_excerpts(annotations, chunks)
+
+        logger.info(f"[pipeline] forming discussions for {paper_id}")
+        threads = form_discussions(paper_id, contested_excerpts, agents)
         _threads[paper_id] = threads
         if threads:
-            save_threads(paper_id, threads)     # Firebase
+            save_threads(paper_id, threads)
 
         save_paper_meta(paper_id, {
             "status": "ready",
             "chunkCount": len(chunks),
+            "agentCount": len(agents),
             "threadCount": len(threads),
         })
         _status[paper_id] = "ready"
-        logger.info(f"[pipeline] done — {len(chunks)} chunks, {len(threads)} threads for {paper_id}")
+        logger.info(
+            f"[pipeline] done — {len(chunks)} chunks, {len(agents)} agents, "
+            f"{len(threads)} threads for {paper_id}"
+        )
     except Exception as e:
-        logger.error(f"[pipeline] error for {paper_id}: {e}")
+        logger.error(f"[pipeline] error for {paper_id}: {e}", exc_info=True)
         _status[paper_id] = "error"
 
 
@@ -120,24 +141,37 @@ async def reprocess_paper(paper_id: str, background_tasks: BackgroundTasks):
     if _status.get(paper_id) == "processing":
         return {"paperId": paper_id, "status": "processing", "message": "Already running"}
 
-    # 기존 캐시 초기화
     _chunks.pop(paper_id, None)
     _threads.pop(paper_id, None)
+    _agents.pop(paper_id, None)
     _status[paper_id] = "processing"
 
     background_tasks.add_task(_run_pipeline, paper_id, file_path)
     return {"paperId": paper_id, "status": "processing"}
 
 
+@router.get("/{paper_id}/agents")
+async def get_paper_agents(paper_id: str):
+    """이 논문의 dynamic agents 반환"""
+    if paper_id in _agents:
+        return {"paperId": paper_id, "agents": _agents[paper_id]}
+    try:
+        agents = get_agents_by_paper(paper_id)
+    except Exception as e:
+        logger.warning(f"[agents] Firestore fallback failed for {paper_id}: {e}")
+        agents = []
+    _agents[paper_id] = agents
+    return {"paperId": paper_id, "agents": agents}
+
+
 @router.get("/{paper_id}/threads")
 async def get_paper_threads(paper_id: str):
-    """Thread 목록 반환 (in-memory 우선, 없으면 Firestore fallback, 없으면 빈 배열)"""
+    """Thread 목록 반환 (in-memory 우선, 없으면 Firestore fallback)"""
     status = _status.get(paper_id)
     if status == "processing":
         return {"paperId": paper_id, "status": "processing", "threads": []}
     if paper_id in _threads:
         return {"paperId": paper_id, "status": status or "ready", "threads": _threads[paper_id]}
-    # 서버 재시작 후 Firestore에서 복구 (실패해도 빈 배열 반환)
     try:
         threads = get_threads_by_paper(paper_id)
     except Exception as e:
@@ -149,7 +183,7 @@ async def get_paper_threads(paper_id: str):
 
 @router.get("/{paper_id}/chunks")
 async def get_paper_chunks(paper_id: str):
-    """파싱된 청크 목록 (좌표 포함) 반환"""
+    """파싱된 청크 목록 반환"""
     if paper_id not in _chunks:
         status = _status.get(paper_id)
         if status is None:
