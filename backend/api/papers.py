@@ -1,29 +1,160 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
-from models import Paper
+import logging
+import os
+import uuid
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+
+from pipeline.ingestion import run_ingestion
+from pipeline.thread_gen import generate_threads
+from pipeline.seed_formation import generate_seed_messages
+from db.vector_store import add_chunks
+from db.firestore import save_chunks, save_paper_meta, save_threads, get_threads_by_paper
+
+logger = logging.getLogger(__name__)
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
 router = APIRouter()
 
+# paper_id → status ("processing" | "ready" | "error")
+_status: dict[str, str] = {}
+# paper_id → chunks (for /chunks endpoint)
+_chunks: dict[str, list] = {}
+# paper_id → threads (in-memory cache)
+_threads: dict[str, list] = {}
+
+
+# ──────────────────────────────────────────────
+# Background pipeline
+# ──────────────────────────────────────────────
+
+def _run_pipeline(paper_id: str, pdf_path: str) -> None:
+    try:
+        _status[paper_id] = "processing"
+        logger.info(f"[pipeline] starting for {paper_id}")
+
+        chunks = run_ingestion(paper_id, pdf_path)
+        _chunks[paper_id] = chunks
+
+        if chunks:
+            add_chunks(paper_id, chunks)        # Chroma (벡터 검색)
+            save_chunks(paper_id, chunks)        # Firebase (좌표 영구 저장)
+
+        logger.info(f"[pipeline] generating threads for {paper_id}")
+        threads = generate_threads(paper_id, chunks)
+
+        logger.info(f"[pipeline] generating seed messages for {paper_id}")
+        threads = generate_seed_messages(threads)
+
+        _threads[paper_id] = threads
+        if threads:
+            save_threads(paper_id, threads)     # Firebase
+
+        save_paper_meta(paper_id, {
+            "status": "ready",
+            "chunkCount": len(chunks),
+            "threadCount": len(threads),
+        })
+        _status[paper_id] = "ready"
+        logger.info(f"[pipeline] done — {len(chunks)} chunks, {len(threads)} threads for {paper_id}")
+    except Exception as e:
+        logger.error(f"[pipeline] error for {paper_id}: {e}")
+        _status[paper_id] = "error"
+
+
+# ──────────────────────────────────────────────
+# Endpoints
+# ──────────────────────────────────────────────
 
 @router.post("/upload")
 async def upload_paper(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """PDF 업로드 → Phase 1 파이프라인 비동기 시작"""
+    """PDF 업로드 → 파이프라인 비동기 실행"""
     if not file.filename or not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다")
 
-    # TODO: Firebase Storage에 저장 후 paper 생성
-    # TODO: background_tasks.add_task(run_pipeline, paper_id)
-    return {"paperId": "TODO", "status": "processing"}
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    paper_id = str(uuid.uuid4())
+    file_path = os.path.join(DATA_DIR, f"{paper_id}.pdf")
+
+    contents = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(contents)
+
+    save_paper_meta(paper_id, {"status": "processing", "url": f"http://localhost:8000/papers/{paper_id}/pdf"})
+    background_tasks.add_task(_run_pipeline, paper_id, file_path)
+
+    return {
+        "paperId": paper_id,
+        "url": f"http://localhost:8000/papers/{paper_id}/pdf",
+        "status": "processing",
+    }
 
 
-@router.get("/{paper_id}")
-async def get_paper(paper_id: str):
-    """논문 메타데이터 + status 조회"""
-    # TODO: Firestore에서 조회
-    raise HTTPException(status_code=404, detail="Not implemented")
+@router.get("/{paper_id}/pdf")
+async def get_paper_pdf(paper_id: str):
+    """PDF 파일 서빙"""
+    file_path = os.path.join(DATA_DIR, f"{paper_id}.pdf")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="PDF not found")
+    return FileResponse(file_path, media_type="application/pdf")
 
 
 @router.get("/{paper_id}/status")
 async def get_paper_status(paper_id: str):
     """파이프라인 진행 상태 polling"""
-    # TODO: Firestore에서 status 조회
-    raise HTTPException(status_code=404, detail="Not implemented")
+    status = _status.get(paper_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return {"paperId": paper_id, "status": status}
+
+
+@router.post("/{paper_id}/reprocess")
+async def reprocess_paper(paper_id: str, background_tasks: BackgroundTasks):
+    """이미 업로드된 PDF에 대해 파이프라인을 다시 실행"""
+    file_path = os.path.join(DATA_DIR, f"{paper_id}.pdf")
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="PDF not found — upload first")
+
+    if _status.get(paper_id) == "processing":
+        return {"paperId": paper_id, "status": "processing", "message": "Already running"}
+
+    # 기존 캐시 초기화
+    _chunks.pop(paper_id, None)
+    _threads.pop(paper_id, None)
+    _status[paper_id] = "processing"
+
+    background_tasks.add_task(_run_pipeline, paper_id, file_path)
+    return {"paperId": paper_id, "status": "processing"}
+
+
+@router.get("/{paper_id}/threads")
+async def get_paper_threads(paper_id: str):
+    """Thread 목록 반환 (in-memory 우선, 없으면 Firestore fallback, 없으면 빈 배열)"""
+    status = _status.get(paper_id)
+    if status == "processing":
+        return {"paperId": paper_id, "status": "processing", "threads": []}
+    if paper_id in _threads:
+        return {"paperId": paper_id, "status": status or "ready", "threads": _threads[paper_id]}
+    # 서버 재시작 후 Firestore에서 복구 (실패해도 빈 배열 반환)
+    try:
+        threads = get_threads_by_paper(paper_id)
+    except Exception as e:
+        logger.warning(f"[threads] Firestore fallback failed for {paper_id}: {e}")
+        threads = []
+    _threads[paper_id] = threads
+    return {"paperId": paper_id, "status": status or "ready", "threads": threads}
+
+
+@router.get("/{paper_id}/chunks")
+async def get_paper_chunks(paper_id: str):
+    """파싱된 청크 목록 (좌표 포함) 반환"""
+    if paper_id not in _chunks:
+        status = _status.get(paper_id)
+        if status is None:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        if status == "processing":
+            return {"paperId": paper_id, "status": "processing", "chunks": []}
+        raise HTTPException(status_code=404, detail="Chunks not available")
+    return {"paperId": paper_id, "status": _status.get(paper_id, "ready"), "chunks": _chunks[paper_id]}
