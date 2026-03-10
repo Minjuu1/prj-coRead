@@ -3,9 +3,9 @@
 // 원칙: id는 DB 참조용. LLM 컨텍스트에 들어가는 건 항상 텍스트.
 // ============================================================
 
-export type AgentId = 'critical' | 'instrumental' | 'aesthetic'
+export type AgentId = string   // dynamic per paper (e.g. "computer-scientist")
 export type Author = AgentId | 'student'
-export type AnnotationType = 'observation' | 'question' | 'challenge'
+export type AnnotationType = 'observation' | 'question' | 'tension'
 export type PaperStatus = 'processing' | 'ready' | 'error'
 export type ThreadStatus = 'locked' | 'open'
 
@@ -113,6 +113,30 @@ export interface PDFHighlight {
 // ============================================================
 // Thread
 // ============================================================
+
+// ============================================================
+// Dynamic Agent (generated per paper)
+// ============================================================
+
+export interface DynamicAgent {
+  id: string          // slug, e.g. "computer-scientist"
+  name: string        // Korean display name
+  field: string       // English field name
+  reading_lens: string
+  system_prompt: string
+  color_index: number // 0–7, for color palette
+}
+
+export interface AgentAnnotation {
+  id: string
+  agent_id: string
+  chunk_id: string
+  section: string
+  position: number
+  annotation_type: 'observation' | 'question' | 'tension'
+  content: string
+  quote: string
+}
 
 export interface SeedMessage {
   author: AgentId

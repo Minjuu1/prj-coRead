@@ -2,17 +2,10 @@ import { useRef, useEffect, useState } from 'react'
 import { useThreadStore } from '../../stores/threadStore'
 import { usePaperStore } from '../../stores/paperStore'
 import { MessageBubble } from './MessageBubble'
-import { streamChat } from '../../services/api'
-import type { Message, AgentId, Thread } from '../../types'
+import { streamChat, getAgents } from '../../services/api'
+import type { Message, Thread } from '../../types'
 
-type AgentMode = 'auto' | AgentId
-
-const AGENT_MODES: { id: AgentMode; label: string; tag: string; color?: string }[] = [
-  { id: 'auto', label: 'Auto', tag: 'auto' },
-  { id: 'critical', label: 'Critical', tag: '@critical', color: 'var(--critical)' },
-  { id: 'instrumental', label: 'Instrumental', tag: '@instrumental', color: 'var(--instrumental)' },
-  { id: 'aesthetic', label: 'Aesthetic', tag: '@aesthetic', color: 'var(--aesthetic)' },
-]
+type AgentMode = 'auto' | string
 
 
 // ─────────────────────────────────────
@@ -75,7 +68,7 @@ function ThreadItem({
 // ─────────────────────────────────────
 function ThreadChat({ thread }: { thread: Thread }) {
   const { messagesByThreadId, isStreaming, addMessage, setStreaming } = useThreadStore()
-  const { paperId, setActiveSources } = usePaperStore()
+  const { paperId, agents, setActiveSources } = usePaperStore()
   const messages = messagesByThreadId[thread.id] ?? []
 
   const [input, setInput] = useState('')
@@ -83,7 +76,7 @@ function ThreadChat({ thread }: { thread: Thread }) {
     (thread.suggestedAgent as AgentMode | undefined) ?? 'auto'
   )
   const [streamingText, setStreamingText] = useState('')
-  const [streamingAgent, setStreamingAgent] = useState<AgentId | null>(null)
+  const [streamingAgent, setStreamingAgent] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -126,7 +119,7 @@ function ThreadChat({ thread }: { thread: Thread }) {
     ]
 
     let fullText = ''
-    let agent: AgentId = 'critical'
+    let agent: string = ''
 
     try {
       for await (const event of streamChat(
@@ -138,7 +131,7 @@ function ThreadChat({ thread }: { thread: Thread }) {
         agentMode === 'auto' ? null : agentMode,
       )) {
         if (event.agent) {
-          agent = event.agent as AgentId
+          agent = event.agent
           setStreamingAgent(agent)
         }
         if (event.token) {
@@ -263,8 +256,12 @@ function ThreadChat({ thread }: { thread: Thread }) {
           }}>
             To
           </span>
-          {AGENT_MODES.map((m) => {
+          {/* Auto button */}
+          {[{ id: 'auto', tag: 'auto', color: null as string | null, colorIdx: -1 },
+            ...agents.map(a => ({ id: a.id, tag: `@${a.id}`, color: `var(--agent-${a.color_index})`, colorIdx: a.color_index }))
+          ].map((m) => {
             const active = agentMode === m.id
+            const color = m.color ?? 'var(--accent)'
             return (
               <button
                 key={m.id}
@@ -274,12 +271,13 @@ function ThreadChat({ thread }: { thread: Thread }) {
                   fontSize: '11px',
                   fontFamily: 'var(--font-mono)',
                   fontWeight: active ? 600 : 400,
-                  border: `1px solid ${active ? (m.color ?? 'var(--accent)') : 'var(--border)'}`,
+                  border: `1px solid ${active ? color : 'var(--border)'}`,
                   borderRadius: '10px',
-                  background: active ? (m.color ? `${m.color}15` : 'var(--accent-light)') : 'transparent',
-                  color: active ? (m.color ?? 'var(--accent)') : 'var(--text-faint)',
+                  background: active ? (m.colorIdx >= 0 ? `var(--agent-${m.colorIdx}-bg)` : 'var(--accent-light)') : 'transparent',
+                  color: active ? color : 'var(--text-faint)',
                   cursor: 'pointer',
                   transition: 'all 0.15s',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {m.tag}
@@ -342,7 +340,16 @@ function ThreadChat({ thread }: { thread: Thread }) {
 // ─────────────────────────────────────
 export function ThreadPanel() {
   const { activeThreadId, setActiveThread, threads } = useThreadStore()
+  const { paperId, setAgents } = usePaperStore()
   const [listOpen, setListOpen] = useState(false)
+
+  // Load dynamic agents for this paper
+  useEffect(() => {
+    if (!paperId) return
+    getAgents(paperId).then((agents) => {
+      if (agents.length > 0) setAgents(agents)
+    })
+  }, [paperId])
 
   const activeThread = threads.find((t) => t.id === activeThreadId) ?? null
 

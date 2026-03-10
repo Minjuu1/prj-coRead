@@ -1,7 +1,9 @@
-import type { Message, AgentId } from '../../types'
+import type { Message } from '../../types'
+import { usePaperStore } from '../../stores/paperStore'
 import { AgentBadge } from './AgentBadge'
 
 export function MessageBubble({ msg }: { msg: Message }) {
+  const agents = usePaperStore((s) => s.agents)
   const isStudent = msg.author === 'student'
 
   if (isStudent) {
@@ -24,16 +26,18 @@ export function MessageBubble({ msg }: { msg: Message }) {
     )
   }
 
-  const agent = msg.author as AgentId
+  const config = agents.find((a) => a.id === msg.author)
+  const colorIndex = config?.color_index ?? 0
+
   return (
     <div style={{ marginBottom: '16px' }}>
       <div style={{ marginBottom: '4px' }}>
-        <AgentBadge agent={agent} />
+        <AgentBadge agent={msg.author} />
       </div>
       <div
         style={{
           maxWidth: '85%',
-          background: `var(--${agent}-bg)`,
+          background: `var(--agent-${colorIndex}-bg)`,
           borderRadius: '0 8px 8px 0',
           padding: '10px 14px',
           fontSize: '14px',
