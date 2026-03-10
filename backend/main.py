@@ -3,7 +3,6 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from api.papers import router as papers_router
 from api.threads import router as threads_router
 from api.chat import router as chat_router

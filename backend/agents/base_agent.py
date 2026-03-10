@@ -1,11 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, List
-from openai import AsyncOpenAI
-import os
-
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-MODEL = "gpt-4o-mini"
+from typing import AsyncIterator
+from services import llm_service
 
 
 class BaseAgent(ABC):
@@ -16,17 +11,21 @@ class BaseAgent(ABC):
 
     @property
     @abstractmethod
+    def model_config(self) -> dict:
+        """{"provider": "openai"|"anthropic"|"google", "model": str}"""
+        ...
+
+    @property
+    @abstractmethod
     def system_prompt(self) -> str: ...
 
     async def stream(
         self,
         user_message: str,
-        history: List[dict],          # [{"role": "user"|"assistant", "content": str}]
-        thread_context: str = "",     # contestablePoint + openQuestion
+        history: list[dict],          # [{"role": "user"|"assistant", "content": str}]
+        thread_context: str = "",     # contestablePoint + openQuestion + RAG chunks
     ) -> AsyncIterator[str]:
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-        ]
+        messages = [{"role": "system", "content": self.system_prompt}]
         if thread_context:
             messages.append({
                 "role": "system",
@@ -35,12 +34,5 @@ class BaseAgent(ABC):
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 
-        stream = await client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            stream=True,
-        )
-        async for chunk in stream:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                yield delta
+        async for token in llm_service.stream(self.model_config, messages):
+            yield token
