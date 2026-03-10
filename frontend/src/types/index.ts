@@ -76,6 +76,28 @@ export interface Annotation {
   createdAt: Date
 }
 
+// ============================================================
+// RAG Source (채팅 응답에서 참조한 청크)
+// ============================================================
+
+export interface GrobidRect {
+  page: number
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  width: number
+  height: number
+}
+
+export interface ChunkSource {
+  chunkId: string
+  section: string
+  page: number
+  content: string   // preview (200자)
+  rects: GrobidRect[]
+}
+
 // react-pdf-highlighter-extended 렌더링 형식
 // Annotation → PDFHighlight 변환 후 PdfHighlighter에 전달
 export interface PDFHighlight {
@@ -92,15 +114,33 @@ export interface PDFHighlight {
 // Thread
 // ============================================================
 
+export interface SeedMessage {
+  author: AgentId
+  content: string
+}
+
 export interface Thread {
   id: string
   paperId: string
   chunkId: string
-  contestablePoint: string          // 논쟁 지점 텍스트
-  seedAnnotationSummaries: string[] // annotation summary 텍스트 목록 (id 아님)
+  contestablePoint: string          // 논쟁 지점 텍스트 (verbatim quote)
   openQuestion: string              // authentic question
   status: ThreadStatus
   createdAt: Date
+
+  // 파이프라인 컨텍스트 (에이전트 프롬프트용 — UI 미표시)
+  significance?: string
+  readingA?: string                 // 두 독해 중 하나 (neither is correct)
+  readingB?: string                 // 두 독해 중 하나
+  suggestedAgent?: AgentId          // 기본 배정 에이전트
+
+  // Seed 대화 (파이프라인 사전 생성)
+  seedMessages?: SeedMessage[]
+
+  // PDF 연동
+  chunkRects?: GrobidRect[]
+  chunkContent?: string
+  chunkSection?: string
 }
 
 // ============================================================
