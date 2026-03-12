@@ -25,7 +25,7 @@ class DynamicAgentInstance:
         if thread_context:
             messages.append({
                 "role": "system",
-                "content": f"[토론 맥락]\n{thread_context}",
+                "content": f"[Thread context]\n{thread_context}",
             })
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})

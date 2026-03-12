@@ -32,11 +32,13 @@ def _get_paper_agents(paper_id: Optional[str]) -> list:
     """paper의 dynamic agents 반환. 캐시 → Firestore 순으로 조회."""
     if not paper_id:
         return []
-    if paper_id in _agents_cache:
-        return _agents_cache[paper_id]
+    cached = _agents_cache.get(paper_id)
+    if cached:  # only use cache if non-empty
+        return cached
     try:
         agents = get_agents_by_paper(paper_id)
-        _agents_cache[paper_id] = agents
+        if agents:  # don't cache empty — pipeline may still be running
+            _agents_cache[paper_id] = agents
         return agents
     except Exception:
         return []

@@ -1,63 +1,82 @@
 def get_prompt(contested_excerpts_text: str, agent_names: str) -> str:
-    return f"""당신은 학술 토론 설계자입니다. 목표: socio-cognitive conflict를 드러내는 살아있는 토론.
+    return f"""You are an academic discussion designer. Goal: a live debate that surfaces socio-cognitive conflict with clear stakes.
 
-아래는 여러 전문가 에이전트({agent_names})가 **실제로 충돌하는 방식으로 반응한** 논문 구절들입니다.
-각 excerpt에는 conflict_type과 key_tension이 분석되어 있습니다.
+Below are paper passages where multiple expert agents ({agent_names}) have responded in genuinely conflicting ways.
+Each excerpt has an analyzed conflict_type and key_tension.
 
-[충돌하는 구절과 에이전트 annotation]
+[Contested Excerpts and Agent Annotations]
 {contested_excerpts_text}
 
 ---
 
-## 토론 thread 설계 원칙
+## Thread Design Principles
 
-### 좋은 thread의 조건
-1. **excerpt_index**: 이 thread가 다루는 구절의 인덱스 (E0, E1, ...)
-2. **open_question**: thread의 핵심 쟁점을 한 문장으로 (한국어) — 이것은 토론의 "제목"이지 첫 발언이 아님
-3. **seed_messages**: 에이전트들이 실제로 충돌하는 **4턴**
-   - author는 agent id (이름 아님)
-   - 각 발언 2-4문장, 자신의 annotation 내용을 구체적으로 활용
-   - 구조: A 주장 → B 반박 → A 재반론 → B 재반박 (또는 제3 에이전트가 개입)
+### What makes a good thread
+1. **excerpt_index**: the index of the excerpt this thread addresses (E0, E1, ...)
+2. **open_question**: the core issue as one sentence (English) — this is the discussion "title", not the first message
+   - Must carry stakes: the "why does this matter" must be visible
+   - Bad: "What are the pros and cons of this tool?"
+   - Good: "If this tool supports design reasoning, how can we tell whether that reasoning belongs to the researcher or the AI?"
+3. **seed_messages**: exactly **4 turns** of genuine conflict between agents
+   - author is the agent id (not name)
+   - each message 2–4 sentences, drawing specifically on the agent's own annotation
+   - **every message must include a stakes or implication move** (see patterns below)
+   - Structure: A claims → B challenges → A counter-argues → B sharpens or 3rd agent intervenes
 
-### conflict_type별 토론 구조
+### Stakes/Implication Patterns (must use at least one per message)
+- **Implication move**: "If this is [X], then we need to rethink [Y]"
+- **Stakes move**: "If that reading is right, we must accept [conclusion Z] — which is unacceptable in [my field] because..."
+- **Consequence move**: "This isn't an abstract problem — it concretely leads to [specific outcome]"
+- **Assumption expose**: "The moment this paper assumes [X], [Y] becomes invisible"
 
-**"trade-off"** — 한 에이전트가 한쪽 가치를 방어, 다른 에이전트가 다른 가치를 방어
-- 첫 발언: "이 선택은 [X]를 가능하게 하지만, [Y]라는 비용이 있다..."
-- 반응: "[Y]를 비용이라고 보지 않는다. [Z] 관점에서는 오히려..."
+### Conflict-type dialogue structures
 
-**"interpretive"** — 첫 에이전트가 독해를 claim, 두 번째가 직접 challenge
-- 첫 발언: "이 구절은 [X]를 의미한다 — [field] 관점에서는..."
-- 반응: "그 독해는 [Y]를 간과한다. 이 구절이 실제로 말하는 것은..."
+**"trade-off"** — each agent defends their side by naming what is gained and lost
+- Turn 1: "This choice gains [X] but loses [Y]. In [my field], losing [Y] means [consequence]"
+- Turn 2: "The framing that [Y] is a loss already presupposes [Z perspective]. From [W] view, actually..."
+- Turn 3: "For [Z perspective] to hold, [premise A] must be true — but in this research..."
+- Turn 4: "Then if [premise A] fails, what this paper calls a solution becomes [reframed problem]"
 
-**"value-based"** — 에이전트들이 자신이 우선시하는 가치를 명시하며 충돌
-- 첫 발언: "[field]에서 가장 중요한 것은 [V]다. 이 구절은..."
-- 반응: "[V]보다 [W]가 더 근본적인 문제다. [field] 관점에서..."
+**"interpretive"** — difference in reading leads to difference in conclusions
+- Turn 1: "This passage means [X]. If so, the paper's [Y] rests on different grounds than claimed"
+- Turn 2: "That reading ignores [Z]. Reading it as [W] yields completely different implications..."
+- Turn 3: "Reading it as [W] requires assuming [condition A], but..."
+- Turn 4: "Then both readings share the assumption [V] — and that assumption is what's actually at stake"
 
-**"methodological"** — 연구/설계 기준을 근거로 각자 주장
-- 첫 발언: "이 방법론은 [X] 기준을 충족하지 못한다 — 왜냐하면..."
-- 반응: "[X] 기준이 여기 적용 가능하다는 가정 자체가 문제다..."
+**"value-based"** — same facts evaluated against different value standards
+- Turn 1: "From [value V], this is [evaluation]. If this research neglects [V]..."
+- Turn 2: "Putting [V] first makes [other value W] invisible..."
+- Turn 3: "Making [W] visible actually reveals a deeper problem the paper hasn't acknowledged..."
+- Turn 4: "Then the real question isn't V vs. W — it's whether the paper can justify its choice at all"
 
-### 절대 금지 (심각한 오류)
-- "동의합니다", "좋은 지적이에요", "맞습니다" 등 동의 표현
-- "따라서 [결론]", "이 문제는 [방법]으로 해결될 수 있다" 등 해결/결론
-- 상대방 관점을 완전히 무시하는 발언 (인정하되 자신의 입장은 끝까지 유지)
-- open_question을 첫 seed_message로 그대로 사용
+**"methodological"** — different research standards affect credibility of conclusions
+- Turn 1: "This methodology doesn't meet [criterion X]. As a result, [conclusion Y] is overclaimed"
+- Turn 2: "Applying [criterion X] here presupposes [context assumption] — which doesn't fit this research because..."
+- Turn 3: "If [criterion X] doesn't apply, what standard does? The paper doesn't say, which means..."
+- Turn 4: "Without a stated standard, any reading of the results is equally valid — including the opposite"
 
-5~7개의 thread를 JSON으로 반환하세요:
+### Absolute prohibitions
+- Agreement or praise: "I agree", "great point", "exactly", "interesting"
+- Resolution: "therefore [conclusion]", "this can be solved by [method]"
+- Stakes-free opinion: "From X perspective, Y is important" (without saying why it matters)
+- Copying the open_question verbatim as the first seed message
+- Two consecutive messages by the same agent
+
+Return 5–7 threads as JSON:
 {{
   "threads": [
     {{
       "excerpt_index": "E0",
-      "open_question": "이 thread의 핵심 쟁점 (한국어, 1문장)",
-      "suggested_agent": "이 thread를 주도할 agent id",
+      "open_question": "Stakes-bearing core issue (English, 1 sentence)",
+      "suggested_agent": "agent id who leads this thread",
       "seed_messages": [
-        {{"author": "agent-id", "content": "position claim (한국어, 2-4문장)"}},
-        {{"author": "agent-id", "content": "직접 반박 (한국어, 2-4문장)"}},
-        {{"author": "agent-id", "content": "재반론 — 상대 반박을 인정하되 입장 유지 (한국어, 2-4문장)"}},
-        {{"author": "agent-id", "content": "재반박 또는 제3 관점 개입 (한국어, 2-4문장)"}}
+        {{"author": "agent-id", "content": "position claim + stakes (English, 2–4 sentences)"}},
+        {{"author": "different-agent-id", "content": "direct challenge + counter-stakes (English, 2–4 sentences)"}},
+        {{"author": "first-agent-id", "content": "counter-argument — attack the premise or deepen implication (English, 2–4 sentences)"}},
+        {{"author": "agent-id", "content": "sharpening or 3rd-agent intervention — surface a deeper problem (English, 2–4 sentences)"}}
       ]
     }}
   ]
 }}
 
-JSON 외 다른 텍스트 없이 응답하세요."""
+Respond with JSON only — no other text."""
