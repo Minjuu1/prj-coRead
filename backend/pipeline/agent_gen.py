@@ -14,40 +14,18 @@ import re
 logger = logging.getLogger(__name__)
 
 _MODEL = {"provider": "openai", "model": "gpt-4o-mini"}
-_INTRO_CHARS = 5000
 
-# Abstract/Intro + Conclusion/Discussion 우선 포함할 섹션 키워드
-_PRIORITY_SECTIONS = ("abstract", "introduction", "conclusion", "discussion", "summary", "implications")
 _SKIP_SECTIONS = ("references", "acknowledgment", "appendix", "bibliography")
 
 
 def _build_paper_context(chunks: list) -> str:
-    """
-    Abstract + Intro + Conclusion/Discussion 섹션 우선 포함.
-    총 ~5000자로 논문 전체 스코프를 대표하는 텍스트 구성.
-    """
-    priority = []
-    rest = []
-
+    """skip 섹션만 제외하고 전체 포함."""
+    parts = []
     for c in chunks:
         section = c.get("section", "").lower()
         if any(k in section for k in _SKIP_SECTIONS):
             continue
-        entry = (c.get("section", ""), c.get("content", ""))
-        if any(k in section for k in _PRIORITY_SECTIONS):
-            priority.append(entry)
-        else:
-            rest.append(entry)
-
-    ordered = priority + rest
-    parts = []
-    total = 0
-    for section, content in ordered:
-        parts.append(f"[{section}]\n{content}")
-        total += len(content)
-        if total >= _INTRO_CHARS:
-            break
-
+        parts.append(f"[{c.get('section', '')}]\n{c.get('content', '')}")
     return "\n\n".join(parts)
 
 
