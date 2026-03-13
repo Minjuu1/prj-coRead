@@ -34,8 +34,10 @@ def _get_db():
             _firebase_available = False
             return None
         if not firebase_admin._apps:
+            bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
+            options = {"storageBucket": bucket_name} if bucket_name else {}
             cred = credentials.Certificate(_CRED_PATH)
-            firebase_admin.initialize_app(cred)
+            firebase_admin.initialize_app(cred, options)
         _db = fs.client()
         _firebase_available = True
         logger.info("[firestore] connected")

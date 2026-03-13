@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { usePaperStore } from '../stores/paperStore'
-import { uploadPaper, getPaperStatus } from '../services/api'
+import { uploadPaper } from '../services/api'
 
 interface UploadPageProps {
   onSuccess: () => void
@@ -8,27 +8,50 @@ interface UploadPageProps {
 
 type Phase = 'idle' | 'uploading' | 'processing' | 'error'
 
-function pollStatus(paperId: string, onReady: () => void, onError: () => void) {
-  const id = setInterval(async () => {
+const STAGE_LABELS: Record<string, string> = {
+  ingestion: '논문 파싱 중...',
+  agents: '에이전트 생성 중...',
+  reading: '에이전트 읽기 중...',
+  cross_reading: '논쟁 지점 추출 중...',
+  discussions: '토론 생성 중...',
+}
+
+function streamPipelineStatus(
+  paperId: string,
+  onStage: (label: string) => void,
+  onReady: () => void,
+  onError: () => void,
+): () => void {
+  const es = new EventSource(`http://localhost:8000/papers/${paperId}/pipeline-stream`)
+  let settled = false  // done 이벤트를 받은 후 onerror가 중복 실행되는 것을 방지
+
+  es.onmessage = (e) => {
     try {
-      const { status } = await getPaperStatus(paperId)
-      if (status === 'ready') {
-        clearInterval(id)
-        onReady()
-      } else if (status === 'error') {
-        clearInterval(id)
-        onError()
+      const event = JSON.parse(e.data)
+      if (event.stage === 'done') {
+        settled = true
+        es.close()
+        event.status === 'ready' ? onReady() : onError()
+      } else {
+        const label = STAGE_LABELS[event.stage]
+        if (label) onStage(label)
       }
-    } catch {
-      clearInterval(id)
-      onError()
-    }
-  }, 2000)
+    } catch { /* ignore */ }
+  }
+  es.onerror = () => {
+    if (settled) return
+    settled = true
+    es.close()
+    onError()
+  }
+  return () => es.close()
 }
 
 export default function UploadPage({ onSuccess }: UploadPageProps) {
   const [file, setFile] = useState<File | null>(null)
   const [phase, setPhase] = useState<Phase>('idle')
+  const [stageLabel, setStageLabel] = useState('파이프라인 실행 중...')
+  const closeStream = useRef<(() => void) | null>(null)
   const setPaper = usePaperStore((s) => s.setPaper)
 
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -37,11 +60,14 @@ export default function UploadPage({ onSuccess }: UploadPageProps) {
 
     setPhase('uploading')
     try {
-      const { paperId, url } = await uploadPaper(file)
+      const { paperId } = await uploadPaper(file)
+      const url = `http://localhost:8000/papers/${paperId}/pdf`
       setPaper(paperId, url)
       setPhase('processing')
-      pollStatus(
+      setStageLabel('파이프라인 실행 중...')
+      closeStream.current = streamPipelineStatus(
         paperId,
+        (label) => setStageLabel(label),
         () => onSuccess(),
         () => setPhase('error'),
       )
@@ -55,7 +81,7 @@ export default function UploadPage({ onSuccess }: UploadPageProps) {
   const statusLabel = {
     idle: '업로드',
     uploading: '업로드 중...',
-    processing: '파이프라인 실행 중...',
+    processing: stageLabel,
     error: '오류 발생 — 다시 시도',
   }[phase]
 
