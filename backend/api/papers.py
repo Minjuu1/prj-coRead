@@ -1,11 +1,13 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import tempfile
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from pipeline.ingestion import run_ingestion
@@ -15,8 +17,11 @@ from pipeline.cross_reading import find_contested_excerpts
 from pipeline.discussion_formation import form_discussions
 from db.vector_store import add_chunks
 from db.firestore import (
-    save_chunks, save_paper_meta, save_threads, get_threads_by_paper,
-    save_agents, get_agents_by_paper, save_annotations,
+    save_chunks, save_paper_meta, get_paper_meta,
+    save_agents, get_agents_by_paper, save_annotations, get_chunks,
+    save_user_paper_meta, get_papers_by_user_v2,
+    save_user_threads, get_user_threads,
+    find_paper_by_hash,
 )
 from db import storage
 
@@ -29,9 +34,11 @@ router = APIRouter()
 
 # paper_id → status ("processing" | "ready" | "error")
 _status: dict[str, str] = {}
+# "{user_id}:{paper_id}" → status (for thread-only pipeline)
+_user_status: dict[str, str] = {}
 # paper_id → chunks (for /chunks endpoint)
 _chunks: dict[str, list] = {}
-# paper_id → threads (in-memory cache)
+# "{user_id}:{paper_id}" → threads (in-memory cache)
 _threads: dict[str, list] = {}
 # paper_id → agents (in-memory cache)
 _agents: dict[str, list] = {}
@@ -67,13 +74,22 @@ def _emit(paper_id: str, stage: str, **kwargs) -> None:
     _progress.setdefault(paper_id, []).append(event)
 
 
-def _run_pipeline(paper_id: str, pdf_path: str, cleanup: bool = False) -> None:
+def _run_pipeline(
+    paper_id: str,
+    user_id: str,
+    pdf_path: str,
+    cleanup: bool = False,
+    content_hash: str | None = None,
+) -> None:
+    """전체 pipeline: ingestion → agent gen → reading → discussions."""
+    user_key = f"{user_id}:{paper_id}"
     try:
         _status[paper_id] = "processing"
+        _user_status[user_key] = "processing"
         _progress[paper_id] = []
-        logger.info(f"[pipeline] starting for {paper_id}")
+        logger.info(f"[pipeline] starting for {paper_id} (user={user_id})")
 
-        chunks = run_ingestion(paper_id, pdf_path)
+        chunks, metadata = run_ingestion(paper_id, pdf_path)
         _chunks[paper_id] = chunks
         if chunks:
             add_chunks(paper_id, chunks)
@@ -99,26 +115,43 @@ def _run_pipeline(paper_id: str, pdf_path: str, cleanup: bool = False) -> None:
 
         logger.info(f"[pipeline] forming discussions for {paper_id}")
         threads = form_discussions(paper_id, contested_excerpts, agents)
-        _threads[paper_id] = threads
+        _threads[user_key] = threads
         if threads:
-            save_threads(paper_id, threads)
+            save_user_threads(user_id, paper_id, threads)
         _emit(paper_id, "discussions", count=len(threads))
 
-        save_paper_meta(paper_id, {
+        paper_meta = {
             "status": "ready",
+            "title": metadata.get("title", ""),
+            "authors": metadata.get("authors", []),
+            "abstract": metadata.get("abstract", ""),
             "chunkCount": len(chunks),
             "agentCount": len(agents),
+        }
+        if content_hash:
+            paper_meta["contentHash"] = content_hash
+        save_paper_meta(paper_id, paper_meta)
+
+        save_user_paper_meta(user_id, paper_id, {
+            "status": "ready",
             "threadCount": len(threads),
+            "title": metadata.get("title", ""),
+            "authors": metadata.get("authors", []),
+            "chunkCount": len(chunks),
         })
+
         _status[paper_id] = "ready"
+        _user_status[user_key] = "ready"
         _emit(paper_id, "done", status="ready")
         logger.info(
             f"[pipeline] done — {len(chunks)} chunks, {len(agents)} agents, "
-            f"{len(threads)} threads for {paper_id}"
+            f"{len(threads)} threads for {paper_id} (user={user_id})"
         )
     except Exception as e:
         logger.error(f"[pipeline] error for {paper_id}: {e}", exc_info=True)
         _status[paper_id] = "error"
+        _user_status[user_key] = "error"
+        save_user_paper_meta(user_id, paper_id, {"status": "error"})
         _emit(paper_id, "done", status="error", message=str(e))
     finally:
         if cleanup and os.path.exists(pdf_path):
@@ -126,28 +159,112 @@ def _run_pipeline(paper_id: str, pdf_path: str, cleanup: bool = False) -> None:
             logger.info(f"[pipeline] cleaned up temp file {pdf_path}")
 
 
+def _run_pipeline_threads_only(paper_id: str, user_id: str) -> None:
+    """중복 논문용 thread-only pipeline: 기존 chunks/agents 재사용, thread gen만 실행."""
+    user_key = f"{user_id}:{paper_id}"
+    try:
+        _user_status[user_key] = "processing"
+        logger.info(f"[pipeline:threads-only] starting for {paper_id} (user={user_id})")
+
+        chunks = _chunks.get(paper_id) or get_chunks(paper_id)
+        if not chunks:
+            raise ValueError(f"No chunks found for paper {paper_id}")
+
+        agents = _agents.get(paper_id) or get_agents_by_paper(paper_id)
+        if not agents:
+            raise ValueError(f"No agents found for paper {paper_id}")
+
+        logger.info(f"[pipeline:threads-only] agent reading for {paper_id}")
+        annotations = run_agent_reading(agents, chunks)
+
+        contested_excerpts = find_contested_excerpts(annotations, chunks)
+
+        logger.info(f"[pipeline:threads-only] forming discussions for {paper_id}")
+        threads = form_discussions(paper_id, contested_excerpts, agents)
+        _threads[user_key] = threads
+        if threads:
+            save_user_threads(user_id, paper_id, threads)
+
+        # 공유 논문 메타에서 title/authors/chunkCount 읽어서 denormalize
+        shared_meta = get_paper_meta(paper_id) or {}
+        save_user_paper_meta(user_id, paper_id, {
+            "status": "ready",
+            "threadCount": len(threads),
+            "title": shared_meta.get("title", ""),
+            "authors": shared_meta.get("authors", []),
+            "filename": shared_meta.get("filename", ""),
+            "chunkCount": shared_meta.get("chunkCount", len(chunks)),
+        })
+
+        _user_status[user_key] = "ready"
+        logger.info(
+            f"[pipeline:threads-only] done — {len(threads)} threads for {paper_id} (user={user_id})"
+        )
+    except Exception as e:
+        logger.error(f"[pipeline:threads-only] error for {paper_id} (user={user_id}): {e}", exc_info=True)
+        _user_status[user_key] = "error"
+        save_user_paper_meta(user_id, paper_id, {"status": "error"})
+
+
 # ──────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────
 
+@router.get("")
+async def list_papers(userId: str = Query(...)):
+    """유저의 논문 라이브러리 목록 반환"""
+    papers = get_papers_by_user_v2(userId)
+    return {"papers": papers}
+
+
+@router.get("/{paper_id}/meta")
+async def get_paper(paper_id: str):
+    """단일 논문 메타데이터 반환 (ReaderPage URL param용)"""
+    meta = get_paper_meta(paper_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    meta["paperId"] = paper_id
+    return meta
+
+
 @router.post("/upload")
-async def upload_paper(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """PDF 업로드 → Firebase Storage 저장 → 파이프라인 비동기 실행"""
+async def upload_paper(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    userId: str = Form(default="anonymous"),
+):
+    """PDF 업로드 → SHA256 중복 확인 → 신규면 전체 pipeline, 기존이면 thread-only pipeline"""
     if not file.filename or not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다")
 
-    paper_id = str(uuid.uuid4())
     contents = await file.read()
+    content_hash = hashlib.sha256(contents).hexdigest()
+
+    # 중복 확인
+    existing_paper_id = find_paper_by_hash(content_hash)
+    now = datetime.now(timezone.utc).isoformat()
+
+    if existing_paper_id:
+        # 기존 논문 재사용 — thread-only pipeline
+        logger.info(f"[upload] duplicate detected: hash={content_hash[:12]}… → reusing {existing_paper_id}")
+        save_user_paper_meta(userId, existing_paper_id, {
+            "uploadedAt": now,
+            "status": "processing",
+            "filename": file.filename,
+        })
+        background_tasks.add_task(_run_pipeline_threads_only, existing_paper_id, userId)
+        return {"paperId": existing_paper_id, "status": "processing"}
+
+    # 신규 논문 — 전체 pipeline
+    paper_id = str(uuid.uuid4())
 
     if storage.is_available():
-        # Firebase Storage에 업로드, 파이프라인용 임시 파일 생성
         uploaded = storage.upload_pdf(paper_id, contents)
         pdf_path = _write_temp_pdf(paper_id, contents)
-        cleanup = uploaded is not None  # 업로드 실패 시 temp 파일 보존
+        cleanup = uploaded is not None
         if not uploaded:
             logger.warning(f"[upload] Storage upload failed for {paper_id} — keeping local temp file")
     else:
-        # Fallback: 로컬 저장
         logger.warning("[upload] Storage unavailable — falling back to local storage")
         os.makedirs(DATA_DIR, exist_ok=True)
         pdf_path = _local_pdf_path(paper_id)
@@ -155,9 +272,19 @@ async def upload_paper(background_tasks: BackgroundTasks, file: UploadFile = Fil
             f.write(contents)
         cleanup = False
 
-    save_paper_meta(paper_id, {"status": "processing", "filename": file.filename})
-    background_tasks.add_task(_run_pipeline, paper_id, pdf_path, cleanup)
+    save_paper_meta(paper_id, {
+        "status": "processing",
+        "filename": file.filename,
+        "uploadedAt": now,
+        "contentHash": content_hash,
+    })
+    save_user_paper_meta(userId, paper_id, {
+        "status": "processing",
+        "filename": file.filename,
+        "uploadedAt": now,
+    })
 
+    background_tasks.add_task(_run_pipeline, paper_id, userId, pdf_path, cleanup, content_hash)
     return {"paperId": paper_id, "status": "processing"}
 
 
@@ -168,7 +295,6 @@ async def get_paper_pdf(paper_id: str):
         data = storage.download_pdf(paper_id)
         if data:
             return Response(content=data, media_type="application/pdf")
-        # Storage에 없으면 로컬 fallback (Storage 설정 전 업로드된 파일)
 
     file_path = _local_pdf_path(paper_id)
     if not os.path.exists(file_path):
@@ -186,12 +312,10 @@ async def stream_pipeline(paper_id: str):
             while sent < len(events):
                 yield f"data: {events[sent]}\n\n"
                 sent += 1
-            # done 이벤트가 전송됐으면 종료
             if sent > 0:
                 last = json.loads(events[sent - 1])
                 if last.get("stage") == "done":
                     break
-            # 아직 파이프라인 시작 전이면 error로 처리
             if _status.get(paper_id) == "error" and sent == 0:
                 yield f"data: {json.dumps({'stage': 'done', 'status': 'error'})}\n\n"
                 break
@@ -205,38 +329,34 @@ async def stream_pipeline(paper_id: str):
 
 
 @router.get("/{paper_id}/status")
-async def get_paper_status(paper_id: str):
-    """파이프라인 진행 상태 polling"""
-    status = _status.get(paper_id)
+async def get_paper_status(paper_id: str, userId: str = Query(default=None)):
+    """파이프라인 진행 상태 polling. userId 있으면 유저별 상태 우선."""
+    if userId:
+        user_key = f"{userId}:{paper_id}"
+        status = _user_status.get(user_key) or _status.get(paper_id)
+    else:
+        status = _status.get(paper_id)
+
     if status is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     return {"paperId": paper_id, "status": status}
 
 
 @router.post("/{paper_id}/reprocess")
-async def reprocess_paper(paper_id: str, background_tasks: BackgroundTasks):
-    """이미 업로드된 PDF에 대해 파이프라인을 다시 실행"""
-    if _status.get(paper_id) == "processing":
+async def reprocess_paper(
+    paper_id: str,
+    background_tasks: BackgroundTasks,
+    userId: str = Query(...),
+):
+    """이미 업로드된 논문에 대해 thread pipeline을 다시 실행"""
+    user_key = f"{userId}:{paper_id}"
+    if _user_status.get(user_key) == "processing":
         return {"paperId": paper_id, "status": "processing", "message": "Already running"}
 
-    if storage.is_available():
-        data = storage.download_pdf(paper_id)
-        if not data:
-            raise HTTPException(status_code=404, detail="PDF not found in storage — upload first")
-        pdf_path = _write_temp_pdf(paper_id, data)
-        cleanup = True
-    else:
-        pdf_path = _local_pdf_path(paper_id)
-        if not os.path.exists(pdf_path):
-            raise HTTPException(status_code=404, detail="PDF not found — upload first")
-        cleanup = False
+    _threads.pop(user_key, None)
+    _user_status[user_key] = "processing"
 
-    _chunks.pop(paper_id, None)
-    _threads.pop(paper_id, None)
-    _agents.pop(paper_id, None)
-    _status[paper_id] = "processing"
-
-    background_tasks.add_task(_run_pipeline, paper_id, pdf_path, cleanup)
+    background_tasks.add_task(_run_pipeline_threads_only, paper_id, userId)
     return {"paperId": paper_id, "status": "processing"}
 
 
@@ -255,19 +375,23 @@ async def get_paper_agents(paper_id: str):
 
 
 @router.get("/{paper_id}/threads")
-async def get_paper_threads(paper_id: str):
+async def get_paper_threads(paper_id: str, userId: str = Query(...)):
     """Thread 목록 반환 (in-memory 우선, 없으면 Firestore fallback)"""
-    status = _status.get(paper_id)
+    user_key = f"{userId}:{paper_id}"
+    status = _user_status.get(user_key) or _status.get(paper_id)
+
     if status == "processing":
         return {"paperId": paper_id, "status": "processing", "threads": []}
-    if paper_id in _threads:
-        return {"paperId": paper_id, "status": status or "ready", "threads": _threads[paper_id]}
+
+    if user_key in _threads:
+        return {"paperId": paper_id, "status": status or "ready", "threads": _threads[user_key]}
+
     try:
-        threads = get_threads_by_paper(paper_id)
+        threads = get_user_threads(userId, paper_id)
     except Exception as e:
-        logger.warning(f"[threads] Firestore fallback failed for {paper_id}: {e}")
+        logger.warning(f"[threads] Firestore fallback failed for {paper_id} (user={userId}): {e}")
         threads = []
-    _threads[paper_id] = threads
+    _threads[user_key] = threads
     return {"paperId": paper_id, "status": status or "ready", "threads": threads}
 
 

@@ -29,7 +29,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
     >
       <h1
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font-sans)',
           fontSize: '28px',
           fontWeight: 600,
           color: 'var(--text)',
@@ -46,7 +46,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
           margin: '0 0 32px 0',
         }}
       >
-        학술 논문 비판적 읽기
+        Critical reading for academic papers
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -54,7 +54,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
           type="text"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="참여 코드를 입력하세요"
+          placeholder="Enter your user ID"
           style={{
             border: '1px solid var(--border)',
             padding: '10px 14px',
@@ -72,7 +72,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
           type="submit"
           disabled={!code.trim()}
           style={{
-            background: code.trim() ? '#1a1a1a' : 'var(--border)',
+            background: code.trim() ? 'var(--accent)' : 'var(--border)',
             color: '#ffffff',
             border: 'none',
             borderRadius: 'var(--radius)',
@@ -84,7 +84,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
             transition: 'background 0.15s',
           }}
         >
-          입장하기
+          Enter
         </button>
       </form>
     </div>

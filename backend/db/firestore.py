@@ -124,6 +124,29 @@ def get_paper_meta(paper_id: str) -> Optional[dict]:
         return None
 
 
+def get_papers_by_user(user_id: str) -> List[dict]:
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        from google.cloud import firestore as fs_module
+        docs = (
+            db.collection("papers")
+            .where("userId", "==", user_id)
+            .order_by("uploadedAt", direction=fs_module.Query.DESCENDING)
+            .stream()
+        )
+        result = []
+        for doc in docs:
+            d = doc.to_dict()
+            d["paperId"] = doc.id
+            result.append(d)
+        return result
+    except Exception as e:
+        _disable(e)
+        return []
+
+
 # ──────────────────────────────────────────────
 # Threads
 # ──────────────────────────────────────────────
@@ -203,3 +226,103 @@ def save_annotations(paper_id: str, annotations: List[dict]) -> None:
         logger.info(f"[firestore] saved {len(annotations)} annotations for paper {paper_id}")
     except Exception as e:
         _disable(e)
+
+
+# ──────────────────────────────────────────────
+# User-centric (hybrid schema)
+# ──────────────────────────────────────────────
+
+def find_paper_by_hash(content_hash: str) -> Optional[str]:
+    """SHA256 해시로 기존 논문 조회. 있으면 paperId 반환, 없으면 None."""
+    db = _get_db()
+    if db is None:
+        return None
+    try:
+        docs = db.collection("papers").where("contentHash", "==", content_hash).limit(1).stream()
+        for doc in docs:
+            return doc.id
+        return None
+    except Exception as e:
+        _disable(e)
+        return None
+
+
+def save_user_paper_meta(user_id: str, paper_id: str, data: dict) -> None:
+    db = _get_db()
+    if db is None:
+        return
+    try:
+        db.collection("users").document(user_id).collection("papers").document(paper_id).set(data, merge=True)
+    except Exception as e:
+        _disable(e)
+
+
+def get_user_paper_meta(user_id: str, paper_id: str) -> Optional[dict]:
+    db = _get_db()
+    if db is None:
+        return None
+    try:
+        doc = db.collection("users").document(user_id).collection("papers").document(paper_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        _disable(e)
+        return None
+
+
+def get_papers_by_user_v2(user_id: str) -> List[dict]:
+    """users/{userId}/papers 서브컬렉션 조회. composite index 불필요."""
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        from google.cloud import firestore as fs_module
+        docs = (
+            db.collection("users").document(user_id).collection("papers")
+            .order_by("uploadedAt", direction=fs_module.Query.DESCENDING)
+            .stream()
+        )
+        result = []
+        for doc in docs:
+            d = doc.to_dict()
+            d["paperId"] = doc.id
+            result.append(d)
+        return result
+    except Exception as e:
+        _disable(e)
+        return []
+
+
+def save_user_threads(user_id: str, paper_id: str, threads: List[dict]) -> None:
+    db = _get_db()
+    if db is None or not threads:
+        return
+    try:
+        batch = db.batch()
+        col = (
+            db.collection("users").document(user_id)
+            .collection("papers").document(paper_id)
+            .collection("threads")
+        )
+        for thread in threads:
+            batch.set(col.document(thread["id"]), thread)
+        batch.commit()
+        logger.info(f"[firestore] saved {len(threads)} threads for user={user_id} paper={paper_id}")
+    except Exception as e:
+        _disable(e)
+
+
+def get_user_threads(user_id: str, paper_id: str) -> List[dict]:
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        docs = (
+            db.collection("users").document(user_id)
+            .collection("papers").document(paper_id)
+            .collection("threads")
+            .stream()
+        )
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        _disable(e)
+        return []

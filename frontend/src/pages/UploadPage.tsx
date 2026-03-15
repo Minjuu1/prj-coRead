@@ -87,7 +87,7 @@ export default function UploadPage({ onSuccess }: UploadPageProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
-      <h2 style={{ fontFamily: 'var(--font-serif)', fontSize: '22px', fontWeight: 600, color: 'var(--text)', margin: '0 0 8px 0' }}>
+      <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: '22px', fontWeight: 600, color: 'var(--text)', margin: '0 0 8px 0' }}>
         논문 업로드
       </h2>
       <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 28px 0' }}>

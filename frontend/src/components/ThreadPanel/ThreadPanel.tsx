@@ -222,14 +222,14 @@ function ThreadChat({ thread }: { thread: Thread }) {
               fontFamily: 'var(--font-mono)',
             }}>
               <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
-              대화에 참여하세요
+              Join the discussion
               <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
             </div>
           </>
         )}
         {messages.length === 0 && !isStreaming && !thread.seedMessages?.length && (
           <div style={{ color: 'var(--text-faint)', fontSize: '13px', textAlign: 'center', marginTop: '32px' }}>
-            질문이나 생각을 입력해보세요.
+            Share a question or thought.
           </div>
         )}
         {messages.map((msg) => (
@@ -295,7 +295,7 @@ function ThreadChat({ thread }: { thread: Thread }) {
                 handleSend()
               }
             }}
-            placeholder="생각을 입력하세요 (Enter로 전송)"
+            placeholder="Type a message (Enter to send)"
             disabled={isStreaming}
             rows={2}
             style={{
@@ -327,7 +327,7 @@ function ThreadChat({ thread }: { thread: Thread }) {
               cursor: isStreaming || !input.trim() ? 'not-allowed' : 'pointer',
             }}
           >
-            {isStreaming ? '···' : '전송'}
+            {isStreaming ? '···' : 'Send'}
           </button>
         </div>
       </div>
@@ -390,7 +390,7 @@ export function ThreadPanel() {
           </div>
           <button
             onClick={() => setListOpen((v) => !v)}
-            title="스레드 목록"
+            title="Thread list"
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -503,7 +503,7 @@ export function ThreadPanel() {
             fontSize: '13px',
           }}
         >
-          <div>스레드를 선택하세요</div>
+          <div>Select a thread</div>
           <button
             onClick={() => setListOpen(true)}
             style={{
@@ -517,7 +517,7 @@ export function ThreadPanel() {
               cursor: 'pointer',
             }}
           >
-            목록 열기
+            Browse threads
           </button>
         </div>
       )}
