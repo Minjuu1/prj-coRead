@@ -1,12 +1,26 @@
-import type { ChunkSource, DynamicAgent, Thread } from '../types'
+import type { ChunkSource, DynamicAgent, LibraryPaper, Thread } from '../types'
 
 const BASE = 'http://localhost:8000'
 
-export async function uploadPaper(file: File): Promise<{ paperId: string; url: string }> {
+export async function uploadPaper(file: File, userId: string = 'anonymous'): Promise<{ paperId: string; status: string }> {
   const form = new FormData()
   form.append('file', file)
+  form.append('userId', userId)
   const res = await fetch(`${BASE}/papers/upload`, { method: 'POST', body: form })
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+  return res.json()
+}
+
+export async function getUserPapers(userId: string): Promise<LibraryPaper[]> {
+  const res = await fetch(`${BASE}/papers?userId=${encodeURIComponent(userId)}`)
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.papers ?? []
+}
+
+export async function getPaperMeta(paperId: string): Promise<LibraryPaper | null> {
+  const res = await fetch(`${BASE}/papers/${paperId}/meta`)
+  if (!res.ok) return null
   return res.json()
 }
 

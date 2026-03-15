@@ -22,6 +22,17 @@ export interface Paper {
   uploadedAt: Date
 }
 
+export interface LibraryPaper {
+  paperId: string
+  title: string
+  authors: string[]
+  status: PaperStatus
+  chunkCount: number
+  threadCount: number
+  uploadedAt: string   // ISO string from backend
+  filename: string
+}
+
 // ============================================================
 // Chunk
 // ============================================================
