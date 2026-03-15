@@ -4,8 +4,9 @@ import logging
 import os
 import tempfile
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from pipeline.ingestion import run_ingestion
@@ -15,8 +16,8 @@ from pipeline.cross_reading import find_contested_excerpts
 from pipeline.discussion_formation import form_discussions
 from db.vector_store import add_chunks
 from db.firestore import (
-    save_chunks, save_paper_meta, save_threads, get_threads_by_paper,
-    save_agents, get_agents_by_paper, save_annotations,
+    save_chunks, save_paper_meta, get_paper_meta, save_threads, get_threads_by_paper,
+    save_agents, get_agents_by_paper, save_annotations, get_papers_by_user,
 )
 from db import storage
 
@@ -73,7 +74,7 @@ def _run_pipeline(paper_id: str, pdf_path: str, cleanup: bool = False) -> None:
         _progress[paper_id] = []
         logger.info(f"[pipeline] starting for {paper_id}")
 
-        chunks = run_ingestion(paper_id, pdf_path)
+        chunks, metadata = run_ingestion(paper_id, pdf_path)
         _chunks[paper_id] = chunks
         if chunks:
             add_chunks(paper_id, chunks)
@@ -106,6 +107,9 @@ def _run_pipeline(paper_id: str, pdf_path: str, cleanup: bool = False) -> None:
 
         save_paper_meta(paper_id, {
             "status": "ready",
+            "title": metadata.get("title", ""),
+            "authors": metadata.get("authors", []),
+            "abstract": metadata.get("abstract", ""),
             "chunkCount": len(chunks),
             "agentCount": len(agents),
             "threadCount": len(threads),
@@ -130,8 +134,29 @@ def _run_pipeline(paper_id: str, pdf_path: str, cleanup: bool = False) -> None:
 # Endpoints
 # ──────────────────────────────────────────────
 
+@router.get("")
+async def list_papers(userId: str = Query(...)):
+    """유저의 논문 라이브러리 목록 반환"""
+    papers = get_papers_by_user(userId)
+    return {"papers": papers}
+
+
+@router.get("/{paper_id}/meta")
+async def get_paper(paper_id: str):
+    """단일 논문 메타데이터 반환 (ReaderPage URL param용)"""
+    meta = get_paper_meta(paper_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    meta["paperId"] = paper_id
+    return meta
+
+
 @router.post("/upload")
-async def upload_paper(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_paper(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    userId: str = Form(default="anonymous"),
+):
     """PDF 업로드 → Firebase Storage 저장 → 파이프라인 비동기 실행"""
     if not file.filename or not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다")
@@ -155,7 +180,12 @@ async def upload_paper(background_tasks: BackgroundTasks, file: UploadFile = Fil
             f.write(contents)
         cleanup = False
 
-    save_paper_meta(paper_id, {"status": "processing", "filename": file.filename})
+    save_paper_meta(paper_id, {
+        "status": "processing",
+        "filename": file.filename,
+        "userId": userId,
+        "uploadedAt": datetime.now(timezone.utc).isoformat(),
+    })
     background_tasks.add_task(_run_pipeline, paper_id, pdf_path, cleanup)
 
     return {"paperId": paper_id, "status": "processing"}

@@ -124,6 +124,29 @@ def get_paper_meta(paper_id: str) -> Optional[dict]:
         return None
 
 
+def get_papers_by_user(user_id: str) -> List[dict]:
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        from google.cloud import firestore as fs_module
+        docs = (
+            db.collection("papers")
+            .where("userId", "==", user_id)
+            .order_by("uploadedAt", direction=fs_module.Query.DESCENDING)
+            .stream()
+        )
+        result = []
+        for doc in docs:
+            d = doc.to_dict()
+            d["paperId"] = doc.id
+            result.append(d)
+        return result
+    except Exception as e:
+        _disable(e)
+        return []
+
+
 # ──────────────────────────────────────────────
 # Threads
 # ──────────────────────────────────────────────

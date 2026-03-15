@@ -22,9 +22,9 @@ MIN_CHUNK_LEN = 80  # 너무 짧은 문단 스킵
 # Public API
 # ──────────────────────────────────────────────
 
-def run_ingestion(paper_id: str, pdf_path: str) -> List[dict]:
+def run_ingestion(paper_id: str, pdf_path: str):
     """
-    PDF → chunk 리스트 (dict).
+    PDF → (chunk 리스트, 논문 메타데이터 dict).
     Grobid 사용 가능하면 텍스트+구조 추출, 좌표는 PyMuPDF로 보강.
     Grobid 미실행 시 fallback: pypdf (좌표 없음).
     """
@@ -32,12 +32,12 @@ def run_ingestion(paper_id: str, pdf_path: str) -> List[dict]:
     if tei_xml:
         logger.info(f"[ingestion] Grobid OK — parsing TEI XML for {paper_id}")
         chunks = _parse_tei(paper_id, tei_xml)
-        # GROBID이 p 좌표를 안 주므로 PyMuPDF로 직접 검색
         chunks = _enrich_rects(chunks, pdf_path)
-        return chunks
+        metadata = _extract_metadata(tei_xml)
+        return chunks, metadata
     else:
         logger.warning(f"[ingestion] Grobid unavailable — fallback for {paper_id}")
-        return _fallback_pypdf(paper_id, pdf_path)
+        return _fallback_pypdf(paper_id, pdf_path), {"title": "", "authors": [], "abstract": ""}
 
 
 # ──────────────────────────────────────────────
@@ -212,6 +212,43 @@ def _enrich_rects(chunks: List[dict], pdf_path: str) -> List[dict]:
     found_count = sum(1 for c in chunks if c["rects"])
     logger.warning(f"[enrich] coords found for {found_count}/{len(chunks)} chunks")
     return chunks
+
+
+# ──────────────────────────────────────────────
+# Metadata extraction from TEI header
+# ──────────────────────────────────────────────
+
+def _extract_metadata(tei_xml: str) -> dict:
+    """TEI XML header에서 제목·저자·초록 추출."""
+    try:
+        root = ET.fromstring(tei_xml)
+    except ET.ParseError:
+        return {"title": "", "authors": [], "abstract": ""}
+
+    # Title
+    title_elem = root.find(f".//{TEI_NS}titleStmt/{TEI_NS}title")
+    title = _elem_text(title_elem) if title_elem is not None else ""
+
+    # Authors: persName → forename + surname
+    authors = []
+    for persName in root.findall(f".//{TEI_NS}persName"):
+        forename = _elem_text(persName.find(f"{TEI_NS}forename")) if persName.find(f"{TEI_NS}forename") is not None else ""
+        surname = _elem_text(persName.find(f"{TEI_NS}surname")) if persName.find(f"{TEI_NS}surname") is not None else ""
+        name = " ".join(filter(None, [forename, surname]))
+        if name:
+            authors.append(name)
+
+    # Abstract: profileDesc/abstract 내 p 텍스트 합치기
+    abstract_parts = []
+    abstract_elem = root.find(f".//{TEI_NS}abstract")
+    if abstract_elem is not None:
+        for p in abstract_elem.iter(f"{TEI_NS}p"):
+            text = _elem_text(p)
+            if text:
+                abstract_parts.append(text)
+    abstract = " ".join(abstract_parts)
+
+    return {"title": title, "authors": authors, "abstract": abstract}
 
 
 # ──────────────────────────────────────────────
