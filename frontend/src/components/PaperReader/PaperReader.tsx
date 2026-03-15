@@ -177,23 +177,23 @@ export function PaperReader({ pdfUrl, threadPanelOpen, onToggleThreadPanel, onRe
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
           {allThreadHighlights.length > 0 && (
             <div style={{ fontSize: '11px', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)' }}>
-              {allThreadHighlights.length}개 스레드
+              {allThreadHighlights.length} threads
             </div>
           )}
           {onReprocess && (
             <button
               onClick={onReprocess}
               disabled={reprocessing}
-              title="파이프라인 재실행"
+              title="Re-run pipeline"
               style={{ ...btnStyle, width: 'auto', padding: '0 8px', fontSize: '11px', fontFamily: 'var(--font-mono)', opacity: reprocessing ? 0.5 : 1 }}
             >
-              {reprocessing ? '처리중…' : '재처리'}
+              {reprocessing ? 'Processing…' : 'Reprocess'}
             </button>
           )}
           {onToggleThreadPanel && (
             <button
               onClick={onToggleThreadPanel}
-              title={threadPanelOpen ? '스레드 패널 닫기' : '스레드 패널 열기'}
+              title={threadPanelOpen ? 'Close thread panel' : 'Open thread panel'}
               style={{
                 ...btnStyle, width: '28px',
                 background: threadPanelOpen ? 'var(--bg-panel)' : 'var(--bg)',
@@ -217,12 +217,12 @@ export function PaperReader({ pdfUrl, threadPanelOpen, onToggleThreadPanel, onRe
           workerSrc={workerSrc}
           beforeLoad={() => (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-faint)' }}>
-              PDF 불러오는 중...
+              Loading PDF...
             </div>
           )}
           errorMessage={(error) => (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '8px' }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-muted)' }}>PDF를 불러올 수 없습니다</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-muted)' }}>Could not load PDF</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-faint)' }}>{error.message}</span>
             </div>
           )}
@@ -284,7 +284,7 @@ function HighlightRenderer() {
         >
           <button
             onClick={handleBadgeClick}
-            title="스레드 열기"
+            title="Open thread"
             style={{
               width: '22px',
               height: '22px',

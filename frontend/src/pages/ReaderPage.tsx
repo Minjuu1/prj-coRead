@@ -1,16 +1,25 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
 import { usePaperStore } from '../stores/paperStore'
 import { useThreadStore } from '../stores/threadStore'
 import { PaperReader } from '../components/PaperReader/PaperReader'
 import { ThreadPanel } from '../components/ThreadPanel/ThreadPanel'
 import { getThreads, getPaperStatus, reprocessPaper } from '../services/api'
 
+const BASE = 'http://localhost:8000'
 const MIN_LEFT = 320
 const MIN_RIGHT = 300
 
 export default function ReaderPage() {
-  const { paperId, pdfUrl } = usePaperStore()
+  const { paperId: paramPaperId } = useParams<{ paperId: string }>()
+  const { paperId: storePaperId, pdfUrl: storePdfUrl } = usePaperStore()
+
+  // URL param 우선, 없으면 Zustand store fallback
+  const paperId = paramPaperId ?? storePaperId
+  const pdfUrl = paramPaperId
+    ? `${BASE}/papers/${paramPaperId}/pdf`
+    : storePdfUrl
+
   const setThreads = useThreadStore((s) => s.setThreads)
   const [leftWidth, setLeftWidth] = useState<number | null>(null)
   const [threadPanelOpen, setThreadPanelOpen] = useState(true)
@@ -82,7 +91,7 @@ export default function ReaderPage() {
     }
   }, [])
 
-  if (!pdfUrl) return <Navigate to="/upload" replace />
+  if (!pdfUrl) return <Navigate to="/library" replace />
 
   return (
     <div
