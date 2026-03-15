@@ -229,9 +229,23 @@ def _extract_metadata(tei_xml: str) -> dict:
     title_elem = root.find(f".//{TEI_NS}titleStmt/{TEI_NS}title")
     title = _elem_text(title_elem) if title_elem is not None else ""
 
-    # Authors: persName → forename + surname
+    # Authors: header의 analytic/author 또는 titleStmt/author 아래 persName만 추출
+    # (references 섹션의 citation 저자 제외)
     authors = []
-    for persName in root.findall(f".//{TEI_NS}persName"):
+    header = root.find(f".//{TEI_NS}teiHeader")
+    author_scope = []
+    if header is not None:
+        # processFulltextDocument: fileDesc/sourceDesc/biblStruct/analytic/author
+        for author in header.findall(f".//{TEI_NS}analytic/{TEI_NS}author"):
+            author_scope.append(author)
+        # fallback: titleStmt/author
+        if not author_scope:
+            for author in header.findall(f".//{TEI_NS}titleStmt/{TEI_NS}author"):
+                author_scope.append(author)
+    for author in author_scope:
+        persName = author.find(f"{TEI_NS}persName")
+        if persName is None:
+            continue
         forename = _elem_text(persName.find(f"{TEI_NS}forename")) if persName.find(f"{TEI_NS}forename") is not None else ""
         surname = _elem_text(persName.find(f"{TEI_NS}surname")) if persName.find(f"{TEI_NS}surname") is not None else ""
         name = " ".join(filter(None, [forename, surname]))
