@@ -1,4 +1,4 @@
-import type { ChunkSource, Thread } from '../types'
+import type { ChunkSource, DynamicAgent, Thread } from '../types'
 
 const BASE = 'http://localhost:8000'
 
@@ -18,6 +18,13 @@ export async function getPaperStatus(paperId: string): Promise<{ status: string 
 
 export async function reprocessPaper(paperId: string): Promise<void> {
   await fetch(`${BASE}/papers/${paperId}/reprocess`, { method: 'POST' })
+}
+
+export async function getAgents(paperId: string): Promise<DynamicAgent[]> {
+  const res = await fetch(`${BASE}/papers/${paperId}/agents`)
+  if (!res.ok) return []
+  const data = await res.json()
+  return data.agents ?? []
 }
 
 export async function getThreads(paperId: string): Promise<Thread[]> {

@@ -1,38 +1,34 @@
-from abc import ABC, abstractmethod
 from typing import AsyncIterator
 from services import llm_service
 
+_MODEL = {"provider": "openai", "model": "gpt-4o-mini"}
 
-class BaseAgent(ABC):
 
-    @property
-    @abstractmethod
-    def agent_id(self) -> str: ...
+class DynamicAgentInstance:
+    """Dynamic agent instantiated from a paper-specific agent config."""
 
-    @property
-    @abstractmethod
-    def model_config(self) -> dict:
-        """{"provider": "openai"|"anthropic"|"google", "model": str}"""
-        ...
+    def __init__(self, agent_config: dict):
+        self._id = agent_config["id"]
+        self._system_prompt = agent_config.get("system_prompt", "")
 
     @property
-    @abstractmethod
-    def system_prompt(self) -> str: ...
+    def agent_id(self) -> str:
+        return self._id
 
     async def stream(
         self,
         user_message: str,
-        history: list[dict],          # [{"role": "user"|"assistant", "content": str}]
-        thread_context: str = "",     # contestablePoint + openQuestion + RAG chunks
+        history: list[dict],
+        thread_context: str = "",
     ) -> AsyncIterator[str]:
-        messages = [{"role": "system", "content": self.system_prompt}]
+        messages = [{"role": "system", "content": self._system_prompt}]
         if thread_context:
             messages.append({
                 "role": "system",
-                "content": f"[토론 맥락]\n{thread_context}",
+                "content": f"[Thread context]\n{thread_context}",
             })
         messages.extend(history)
         messages.append({"role": "user", "content": user_message})
 
-        async for token in llm_service.stream(self.model_config, messages):
+        async for token in llm_service.stream(_MODEL, messages):
             yield token

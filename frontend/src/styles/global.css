@@ -17,14 +17,15 @@
   --accent-light: #ede9fe;
   --accent-fg: #ffffff;
 
-  /* Agent colors */
-  --critical: #c0392b;
-  --instrumental: #2563eb;
-  --aesthetic: #059669;
-
-  --critical-bg: #fef2f2;
-  --instrumental-bg: #eff6ff;
-  --aesthetic-bg: #ecfdf5;
+  /* Dynamic agent color palette (color_index 0–7) */
+  --agent-0: #7c3aed; --agent-0-bg: #f5f3ff;
+  --agent-1: #2563eb; --agent-1-bg: #eff6ff;
+  --agent-2: #059669; --agent-2-bg: #ecfdf5;
+  --agent-3: #c0392b; --agent-3-bg: #fef2f2;
+  --agent-4: #d97706; --agent-4-bg: #fffbeb;
+  --agent-5: #db2777; --agent-5-bg: #fdf2f8;
+  --agent-6: #0891b2; --agent-6-bg: #ecfeff;
+  --agent-7: #65a30d; --agent-7-bg: #f7fee7;
 
   /* Typography */
   --font-serif: 'Lora', Georgia, serif;

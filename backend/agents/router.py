@@ -1,32 +1,43 @@
 """
-Router — LLM-as-a-judge로 어느 에이전트가 응답할지 결정.
+Router — 사용 가능한 dynamic agents 중에서 LLM-as-a-judge로 최적 에이전트 선택.
 """
-from agents.base_agent import BaseAgent
-from agents.critical import CriticalAgent
-from agents.instrumental import InstrumentalAgent
-from agents.aesthetic import AestheticAgent
-from prompts.routing import ROUTING_PROMPT
+from agents.base_agent import DynamicAgentInstance
 from services import llm_service
 
-_agents: dict[str, BaseAgent] = {
-    "critical": CriticalAgent(),
-    "instrumental": InstrumentalAgent(),
-    "aesthetic": AestheticAgent(),
-}
-
-# 라우팅은 빠른 응답이 중요하므로 gpt-4o-mini 고정
 _ROUTING_MODEL = {"provider": "openai", "model": "gpt-4o-mini"}
 
 
-async def route(user_message: str, history: list, thread_context: str) -> str:
-    """학생 메시지와 컨텍스트를 보고 에이전트 ID 반환."""
+def _build_routing_prompt(agents: list[dict]) -> str:
+    agent_list = "\n".join(
+        f"- {a['id']}: {a['name']} — {a.get('reading_lens', a.get('field', ''))}"
+        for a in agents
+    )
+    return (
+        "You are routing a student's question to the most relevant expert agent.\n"
+        f"Available agents:\n{agent_list}\n\n"
+        "Based on the student's message and conversation context, pick the most relevant agent.\n"
+        "Reply with ONLY the agent id (the part before the colon above). One word, no punctuation."
+    )
+
+
+async def route(
+    user_message: str,
+    history: list,
+    thread_context: str,
+    agents: list[dict],
+) -> str:
+    """학생 메시지와 available agents를 보고 에이전트 ID 반환."""
+    if not agents:
+        return ""
+
+    valid_ids = {a["id"] for a in agents}
+    routing_prompt = _build_routing_prompt(agents)
+
     context_block = f"Thread context: {thread_context}\n" if thread_context else ""
     history_block = ""
     if history:
         for msg in history[-6:]:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            history_block += f"{role}: {content}\n"
+            history_block += f"{msg.get('role', 'user')}: {msg.get('content', '')}\n"
 
     user_content = (
         f"{context_block}"
@@ -38,21 +49,26 @@ async def route(user_message: str, history: list, thread_context: str) -> str:
         decision = await llm_service.complete(
             _ROUTING_MODEL,
             [
-                {"role": "system", "content": ROUTING_PROMPT},
+                {"role": "system", "content": routing_prompt},
                 {"role": "user", "content": user_content},
             ],
-            max_tokens=5,
+            max_tokens=10,
         )
-        decision = decision.lower()
-        if decision in _agents:
+        decision = decision.strip().lower()
+        if decision in valid_ids:
             return decision
-        for key in _agents:
-            if key in decision:
-                return key
-        return "critical"
+        for aid in valid_ids:
+            if aid in decision:
+                return aid
     except Exception:
-        return "critical"
+        pass
+
+    return agents[0]["id"]
 
 
-def get_agent(agent_id: str) -> BaseAgent:
-    return _agents.get(agent_id, _agents["critical"])
+def get_agent(agent_id: str, agents: list[dict]) -> DynamicAgentInstance:
+    """agent_id에 맞는 DynamicAgentInstance 반환. 없으면 첫 번째 에이전트."""
+    for a in agents:
+        if a["id"] == agent_id:
+            return DynamicAgentInstance(a)
+    return DynamicAgentInstance(agents[0]) if agents else DynamicAgentInstance({"id": agent_id, "system_prompt": ""})

@@ -7,7 +7,7 @@ Firebase Firestore 연결 + 청크/annotation 저장/조회.
     annotations/{annotationId}
     threads/{threadId}
 
-Firebase credentials 없으면 모든 작업을 no-op/빈값으로 처리 (in-memory only mode).
+Firebase credentials 없거나 권한 에러가 나면 모든 작업을 no-op/빈값으로 처리 (in-memory only mode).
 """
 import os
 import logging
@@ -34,8 +34,10 @@ def _get_db():
             _firebase_available = False
             return None
         if not firebase_admin._apps:
+            bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET")
+            options = {"storageBucket": bucket_name} if bucket_name else {}
             cred = credentials.Certificate(_CRED_PATH)
-            firebase_admin.initialize_app(cred)
+            firebase_admin.initialize_app(cred, options)
         _db = fs.client()
         _firebase_available = True
         logger.info("[firestore] connected")
@@ -46,6 +48,13 @@ def _get_db():
         return None
 
 
+def _disable(e: Exception) -> None:
+    """권한/네트워크 에러 시 Firestore를 비활성화하고 경고 로그."""
+    global _firebase_available
+    _firebase_available = False
+    logger.warning(f"[firestore] disabled due to error: {type(e).__name__}: {e}")
+
+
 # ──────────────────────────────────────────────
 # Chunks
 # ──────────────────────────────────────────────
@@ -54,28 +63,39 @@ def save_chunks(paper_id: str, chunks: List[dict]) -> None:
     db = _get_db()
     if db is None:
         return
-    batch = db.batch()
-    col = db.collection("papers").document(paper_id).collection("chunks")
-    for chunk in chunks:
-        batch.set(col.document(chunk["id"]), chunk)
-    batch.commit()
-    logger.info(f"[firestore] saved {len(chunks)} chunks for paper {paper_id}")
+    try:
+        batch = db.batch()
+        col = db.collection("papers").document(paper_id).collection("chunks")
+        for chunk in chunks:
+            batch.set(col.document(chunk["id"]), chunk)
+        batch.commit()
+        logger.info(f"[firestore] saved {len(chunks)} chunks for paper {paper_id}")
+    except Exception as e:
+        _disable(e)
 
 
 def get_chunks(paper_id: str) -> List[dict]:
     db = _get_db()
     if db is None:
         return []
-    docs = db.collection("papers").document(paper_id).collection("chunks").stream()
-    return [doc.to_dict() for doc in docs]
+    try:
+        docs = db.collection("papers").document(paper_id).collection("chunks").stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        _disable(e)
+        return []
 
 
 def get_chunk(paper_id: str, chunk_id: str) -> Optional[dict]:
     db = _get_db()
     if db is None:
         return None
-    doc = db.collection("papers").document(paper_id).collection("chunks").document(chunk_id).get()
-    return doc.to_dict() if doc.exists else None
+    try:
+        doc = db.collection("papers").document(paper_id).collection("chunks").document(chunk_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        _disable(e)
+        return None
 
 
 # ──────────────────────────────────────────────
@@ -86,15 +106,22 @@ def save_paper_meta(paper_id: str, data: dict) -> None:
     db = _get_db()
     if db is None:
         return
-    db.collection("papers").document(paper_id).set(data, merge=True)
+    try:
+        db.collection("papers").document(paper_id).set(data, merge=True)
+    except Exception as e:
+        _disable(e)
 
 
 def get_paper_meta(paper_id: str) -> Optional[dict]:
     db = _get_db()
     if db is None:
         return None
-    doc = db.collection("papers").document(paper_id).get()
-    return doc.to_dict() if doc.exists else None
+    try:
+        doc = db.collection("papers").document(paper_id).get()
+        return doc.to_dict() if doc.exists else None
+    except Exception as e:
+        _disable(e)
+        return None
 
 
 # ──────────────────────────────────────────────
@@ -105,17 +132,74 @@ def save_threads(paper_id: str, threads: List[dict]) -> None:
     db = _get_db()
     if db is None or not threads:
         return
-    batch = db.batch()
-    col = db.collection("papers").document(paper_id).collection("threads")
-    for thread in threads:
-        batch.set(col.document(thread["id"]), thread)
-    batch.commit()
-    logger.info(f"[firestore] saved {len(threads)} threads for paper {paper_id}")
+    try:
+        batch = db.batch()
+        col = db.collection("papers").document(paper_id).collection("threads")
+        for thread in threads:
+            batch.set(col.document(thread["id"]), thread)
+        batch.commit()
+        logger.info(f"[firestore] saved {len(threads)} threads for paper {paper_id}")
+    except Exception as e:
+        _disable(e)
 
 
 def get_threads_by_paper(paper_id: str) -> List[dict]:
     db = _get_db()
     if db is None:
         return []
-    docs = db.collection("papers").document(paper_id).collection("threads").stream()
-    return [doc.to_dict() for doc in docs]
+    try:
+        docs = db.collection("papers").document(paper_id).collection("threads").stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        _disable(e)
+        return []
+
+
+# ──────────────────────────────────────────────
+# Dynamic Agents
+# ──────────────────────────────────────────────
+
+def save_agents(paper_id: str, agents: List[dict]) -> None:
+    db = _get_db()
+    if db is None or not agents:
+        return
+    try:
+        batch = db.batch()
+        col = db.collection("papers").document(paper_id).collection("agents")
+        for agent in agents:
+            batch.set(col.document(agent["id"]), agent)
+        batch.commit()
+        logger.info(f"[firestore] saved {len(agents)} agents for paper {paper_id}")
+    except Exception as e:
+        _disable(e)
+
+
+def get_agents_by_paper(paper_id: str) -> List[dict]:
+    db = _get_db()
+    if db is None:
+        return []
+    try:
+        docs = db.collection("papers").document(paper_id).collection("agents").stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        _disable(e)
+        return []
+
+
+# ──────────────────────────────────────────────
+# Agent Annotations
+# ──────────────────────────────────────────────
+
+def save_annotations(paper_id: str, annotations: List[dict]) -> None:
+    db = _get_db()
+    if db is None or not annotations:
+        return
+    try:
+        batch = db.batch()
+        col = db.collection("papers").document(paper_id).collection("agent_annotations")
+        for ann in annotations:
+            batch.set(col.document(ann["id"]), ann)
+        batch.commit()
+        logger.info(f"[firestore] saved {len(annotations)} annotations for paper {paper_id}")
+    except Exception as e:
+        _disable(e)

@@ -6,9 +6,12 @@ import json
 
 from agents.router import route, get_agent
 from db.vector_store import query as rag_query
-from db.firestore import get_chunk
+from db.firestore import get_chunk, get_agents_by_paper
 
 router = APIRouter()
+
+# paper_id → agents cache
+_agents_cache: dict[str, list] = {}
 
 
 class HistoryMessage(BaseModel):
@@ -23,6 +26,22 @@ class MessageBody(BaseModel):
     agentId: Optional[str] = None   # 지정 시 라우팅 스킵, None이면 LLM-as-a-judge
     history: List[HistoryMessage] = []
     threadContext: str = ""
+
+
+def _get_paper_agents(paper_id: Optional[str]) -> list:
+    """paper의 dynamic agents 반환. 캐시 → Firestore 순으로 조회."""
+    if not paper_id:
+        return []
+    cached = _agents_cache.get(paper_id)
+    if cached:  # only use cache if non-empty
+        return cached
+    try:
+        agents = get_agents_by_paper(paper_id)
+        if agents:  # don't cache empty — pipeline may still be running
+            _agents_cache[paper_id] = agents
+        return agents
+    except Exception:
+        return []
 
 
 def _fetch_rag(paper_id: Optional[str], query: str):
@@ -42,7 +61,6 @@ def _fetch_rag(paper_id: Optional[str], query: str):
         chunk_id = r.get("id", "")
         parts.append(f"[{section}, p.{page}]\n{content}")
 
-        # rects는 Firebase에서 가져옴
         rects = []
         if chunk_id and paper_id:
             chunk = get_chunk(paper_id, chunk_id)
@@ -53,7 +71,7 @@ def _fetch_rag(paper_id: Optional[str], query: str):
             "chunkId": chunk_id,
             "section": section,
             "page": page,
-            "content": content[:200],  # 프리뷰용
+            "content": content[:200],
             "rects": rects,
         })
 
@@ -69,11 +87,20 @@ async def send_message(thread_id: str, body: MessageBody):
     if rag_context:
         combined_context += f"\n\n[Relevant paper excerpts]\n{rag_context}"
 
-    if body.agentId and body.agentId in ("critical", "instrumental", "aesthetic"):
+    agents = _get_paper_agents(body.paperId)
+
+    valid_ids = {a["id"] for a in agents}
+    if body.agentId and body.agentId in valid_ids:
         agent_id = body.agentId
     else:
-        agent_id = await route(body.content, [m.model_dump() for m in body.history], combined_context)
-    agent = get_agent(agent_id)
+        agent_id = await route(
+            body.content,
+            [m.model_dump() for m in body.history],
+            combined_context,
+            agents,
+        )
+
+    agent = get_agent(agent_id, agents)
 
     async def generate():
         yield f"data: {json.dumps({'agent': agent.agent_id})}\n\n"
