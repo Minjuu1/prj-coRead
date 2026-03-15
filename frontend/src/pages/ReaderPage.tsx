@@ -2,6 +2,7 @@ import { useRef, useState, useCallback, useEffect } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
 import { usePaperStore } from '../stores/paperStore'
 import { useThreadStore } from '../stores/threadStore'
+import { useUserStore } from '../stores/userStore'
 import { PaperReader } from '../components/PaperReader/PaperReader'
 import { ThreadPanel } from '../components/ThreadPanel/ThreadPanel'
 import { getThreads, getPaperStatus, reprocessPaper } from '../services/api'
@@ -20,6 +21,7 @@ export default function ReaderPage() {
     ? `${BASE}/papers/${paramPaperId}/pdf`
     : storePdfUrl
 
+  const userId = useUserStore((s) => s.userId) ?? 'anonymous'
   const setThreads = useThreadStore((s) => s.setThreads)
   const [leftWidth, setLeftWidth] = useState<number | null>(null)
   const [threadPanelOpen, setThreadPanelOpen] = useState(true)
@@ -29,20 +31,20 @@ export default function ReaderPage() {
   const handleReprocess = useCallback(async () => {
     if (!paperId || reprocessing) return
     setReprocessing(true)
-    await reprocessPaper(paperId)
+    await reprocessPaper(paperId, userId)
     pollRef.current = setInterval(async () => {
-      const { status } = await getPaperStatus(paperId)
+      const { status } = await getPaperStatus(paperId, userId)
       if (status === 'ready' || status === 'error') {
         clearInterval(pollRef.current!)
         pollRef.current = null
         setReprocessing(false)
         if (status === 'ready') {
-          const threads = await getThreads(paperId)
+          const threads = await getThreads(paperId, userId)
           setThreads(threads)
         }
       }
     }, 2000)
-  }, [paperId, reprocessing, setThreads])
+  }, [paperId, userId, reprocessing, setThreads])
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
   const containerRef = useRef<HTMLDivElement>(null)
@@ -51,8 +53,8 @@ export default function ReaderPage() {
   // threads 로드
   useEffect(() => {
     if (!paperId) return
-    getThreads(paperId).then(setThreads)
-  }, [paperId, setThreads])
+    getThreads(paperId, userId).then(setThreads)
+  }, [paperId, userId, setThreads])
 
   // 초기 너비: 컨테이너 너비 - 420px (thread panel)
   useEffect(() => {

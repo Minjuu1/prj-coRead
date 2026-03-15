@@ -42,7 +42,7 @@ export default function LibraryPage() {
     setProcessingIds((prev) => new Set(prev).add(paperId))
     pollRefs.current[paperId] = setInterval(async () => {
       try {
-        const { status } = await getPaperStatus(paperId)
+        const { status } = await getPaperStatus(paperId, userId)
         if (status === 'ready' || status === 'error') {
           clearInterval(pollRefs.current[paperId])
           delete pollRefs.current[paperId]
@@ -79,7 +79,7 @@ export default function LibraryPage() {
 
   async function handleRegenerate(paperId: string) {
     if (processingIds.has(paperId)) return
-    await reprocessPaper(paperId)
+    await reprocessPaper(paperId, userId)
     setPapers((prev) =>
       prev.map((p) => p.paperId === paperId ? { ...p, status: 'processing' } : p)
     )

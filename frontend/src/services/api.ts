@@ -24,14 +24,17 @@ export async function getPaperMeta(paperId: string): Promise<LibraryPaper | null
   return res.json()
 }
 
-export async function getPaperStatus(paperId: string): Promise<{ status: string }> {
-  const res = await fetch(`${BASE}/papers/${paperId}/status`)
+export async function getPaperStatus(paperId: string, userId?: string): Promise<{ status: string }> {
+  const url = userId
+    ? `${BASE}/papers/${paperId}/status?userId=${encodeURIComponent(userId)}`
+    : `${BASE}/papers/${paperId}/status`
+  const res = await fetch(url)
   if (!res.ok) throw new Error(`Status check failed: ${res.status}`)
   return res.json()
 }
 
-export async function reprocessPaper(paperId: string): Promise<void> {
-  await fetch(`${BASE}/papers/${paperId}/reprocess`, { method: 'POST' })
+export async function reprocessPaper(paperId: string, userId: string): Promise<void> {
+  await fetch(`${BASE}/papers/${paperId}/reprocess?userId=${encodeURIComponent(userId)}`, { method: 'POST' })
 }
 
 export async function getAgents(paperId: string): Promise<DynamicAgent[]> {
@@ -41,8 +44,8 @@ export async function getAgents(paperId: string): Promise<DynamicAgent[]> {
   return data.agents ?? []
 }
 
-export async function getThreads(paperId: string): Promise<Thread[]> {
-  const res = await fetch(`${BASE}/papers/${paperId}/threads`)
+export async function getThreads(paperId: string, userId: string): Promise<Thread[]> {
+  const res = await fetch(`${BASE}/papers/${paperId}/threads?userId=${encodeURIComponent(userId)}`)
   if (!res.ok) return []
   const data = await res.json()
   return (data.threads ?? []).map((t: any) => ({
