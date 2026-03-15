@@ -29,7 +29,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
     >
       <h1
         style={{
-          fontFamily: 'var(--font-serif)',
+          fontFamily: 'var(--font-sans)',
           fontSize: '28px',
           fontWeight: 600,
           color: 'var(--text)',
@@ -72,7 +72,7 @@ export default function LoginPage({ onSuccess }: LoginPageProps) {
           type="submit"
           disabled={!code.trim()}
           style={{
-            background: code.trim() ? '#1a1a1a' : 'var(--border)',
+            background: code.trim() ? 'var(--accent)' : 'var(--border)',
             color: '#ffffff',
             border: 'none',
             borderRadius: 'var(--radius)',

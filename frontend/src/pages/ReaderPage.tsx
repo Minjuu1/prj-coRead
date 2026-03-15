@@ -128,7 +128,7 @@ export default function ReaderPage() {
             cursor: 'col-resize',
             transition: 'background 0.15s',
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = '#bbb')}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--border)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--border)')}
         />
       )}

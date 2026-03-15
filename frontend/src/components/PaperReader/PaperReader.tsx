@@ -211,7 +211,7 @@ export function PaperReader({ pdfUrl, threadPanelOpen, onToggleThreadPanel, onRe
       </div>
 
       {/* PDF 뷰어 */}
-      <div style={{ position: 'relative', flex: 1, overflow: 'hidden', background: '#f0eef8' }}>
+      <div style={{ position: 'relative', flex: 1, overflow: 'hidden', background: 'var(--bg-panel)' }}>
         <PdfLoader
           document={pdfUrl}
           workerSrc={workerSrc}

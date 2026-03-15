@@ -91,7 +91,7 @@ export default function LibraryPage() {
       {/* 헤더 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
         <div>
-          <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: '24px', fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+          <h1 style={{ fontFamily: 'var(--font-sans)', fontSize: '24px', fontWeight: 600, color: 'var(--text)', margin: 0 }}>
             My Library
           </h1>
           <p style={{ fontFamily: 'var(--font-sans)', fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
@@ -180,7 +180,7 @@ interface PaperCardProps {
 function PaperCard({ paper, index, isProcessing, onOpen, onRegenerate }: PaperCardProps) {
   const statusColor = {
     ready: 'var(--accent)',
-    processing: '#f59e0b',
+    processing: 'var(--warning)',
     error: 'var(--critical)',
   }[paper.status]
 
@@ -220,7 +220,7 @@ function PaperCard({ paper, index, isProcessing, onOpen, onRegenerate }: PaperCa
       {/* 메인 텍스트 */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontFamily: 'var(--font-serif)', fontSize: '14px', fontWeight: 600,
+          fontFamily: 'var(--font-sans)', fontSize: '14px', fontWeight: 600,
           color: 'var(--text)',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>

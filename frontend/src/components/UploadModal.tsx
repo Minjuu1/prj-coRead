@@ -49,7 +49,7 @@ export function UploadModal({ onClose, onUploadStarted }: UploadModalProps) {
           display: 'flex', flexDirection: 'column', gap: '16px',
         }}
       >
-        <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '18px', fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+        <h3 style={{ fontFamily: 'var(--font-sans)', fontSize: '18px', fontWeight: 600, color: 'var(--text)', margin: 0 }}>
           Upload Paper
         </h3>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

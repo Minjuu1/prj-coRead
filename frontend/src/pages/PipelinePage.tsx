@@ -110,7 +110,7 @@ function StageCard({ label, result, loading }: { label: string; result: StageRes
                       </span>
                     )}
                     {item.rects !== undefined && (
-                      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: item.rects.length > 0 ? '#16a34a' : '#dc2626' }}>
+                      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: item.rects.length > 0 ? 'var(--success)' : 'var(--error)' }}>
                         {item.rects.length > 0 ? `rects: ${item.rects.length}` : 'no coords'}
                       </span>
                     )}
@@ -261,8 +261,8 @@ export default function PipelinePage() {
         {error && (
           <div style={{
             marginBottom: '16px', padding: '10px 14px',
-            background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '6px',
-            fontSize: '12px', fontFamily: 'var(--font-mono)', color: '#b91c1c',
+            background: 'var(--error-light)', border: '1px solid var(--border)', borderRadius: '6px',
+            fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--error)',
           }}>
             {error}
           </div>
